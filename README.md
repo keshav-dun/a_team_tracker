@@ -88,7 +88,7 @@ npm run dev
 ```
 
 This starts both:
-- Backend API on `http://localhost:5000`
+- Backend API on `http://localhost:5001`
 - Frontend dev server on `http://localhost:5173`
 
 ## User Roles

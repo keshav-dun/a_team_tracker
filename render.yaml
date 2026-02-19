@@ -23,7 +23,6 @@ services:
   - type: web
     name: dhsync
     runtime: static
-    region: oregon
     rootDir: client
     buildCommand: npm install && npm run build
     staticPublishPath: dist
