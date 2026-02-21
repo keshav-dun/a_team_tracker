@@ -163,7 +163,7 @@ function validateParams(schema: z.ZodSchema) {
       });
       return;
     }
-    req.params = { ...result.data } as typeof req.params;
+    req.params = result.data as typeof req.params;
     next();
   };
 }
