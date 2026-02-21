@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { entryApi, holidayApi, statusApi, eventApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 import type { TeamMemberData, Holiday, StatusType, EntryDetail, DaySummary, TodayStatusResponse, CalendarEvent } from '../types';
@@ -73,23 +73,66 @@ const TeamCalendarPage: React.FC = () => {
   const [eventDetailIdx, setEventDetailIdx] = useState(0);
 
   const days = getDaysInMonth(month);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollWeek = (direction: 'left' | 'right') => {
+    if (!scrollRef.current) return;
+    const colWidth = 100; // min-w-[100px] per day column
+    const offset = colWidth * 7; // one week
+    scrollRef.current.scrollBy({
+      left: direction === 'right' ? offset : -offset,
+      behavior: 'smooth',
+    });
+  };
+
+  // Shared base: team filtered by search query only
+  const searchFilteredTeam = useMemo(() => {
+    if (!searchQuery.trim()) return team;
+    const q = searchQuery.toLowerCase().trim();
+    return team.filter(
+      (m) => m.user.name.toLowerCase().includes(q) || m.user.email.toLowerCase().includes(q)
+    );
+  }, [team, searchQuery]);
 
   const filteredTeam = useMemo(() => {
-    let result = team;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      result = result.filter(
-        (m) => m.user.name.toLowerCase().includes(q) || m.user.email.toLowerCase().includes(q)
-      );
-    }
-    if (statusFilter !== 'all' && filterDate) {
-      result = result.filter((m) => {
+    if (statusFilter === 'all') return searchFilteredTeam;
+    if (filterDate) {
+      return searchFilteredTeam.filter((m) => {
         const effective = getEffectiveStatusForFilter(m.entries, filterDate);
         return effective === statusFilter;
       });
     }
-    return result;
-  }, [team, searchQuery, statusFilter, filterDate, holidays]);
+    // No date chosen — show members who have this status on ANY weekday in the month
+    return searchFilteredTeam.filter((m) =>
+      days.some((d) => {
+        if (isWeekend(d) || holidays[d]) return false;
+        return getEffectiveStatusForFilter(m.entries, d) === statusFilter;
+      })
+    );
+  }, [searchFilteredTeam, statusFilter, filterDate, holidays, days]);
+
+  // Compute per-status counts for the active filter context
+  const statusCounts = useMemo(() => {
+    const counts = { office: 0, leave: 0, wfh: 0 };
+    if (filterDate) {
+      searchFilteredTeam.forEach((m) => {
+        const s = getEffectiveStatusForFilter(m.entries, filterDate);
+        counts[s]++;
+      });
+    } else {
+      // Show total unique members per status across the month
+      searchFilteredTeam.forEach((m) => {
+        const statuses = new Set<string>();
+        days.forEach((d) => {
+          if (!isWeekend(d) && !holidays[d]) statuses.add(getEffectiveStatusForFilter(m.entries, d));
+        });
+        if (statuses.has('office')) counts.office++;
+        if (statuses.has('leave')) counts.leave++;
+        if (statuses.has('wfh')) counts.wfh++;
+      });
+    }
+    return counts;
+  }, [searchFilteredTeam, filterDate, holidays, days]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -132,6 +175,11 @@ const TeamCalendarPage: React.FC = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { fetchTodayStatus(); }, [fetchTodayStatus]);
+
+  // Reset filterDate when month changes so it doesn't point to a stale date
+  useEffect(() => {
+    setFilterDate('');
+  }, [month]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -372,23 +420,26 @@ const TeamCalendarPage: React.FC = () => {
             <div className="flex items-center bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-1">
               {([
                 { value: 'all' as const, label: 'All', icon: null },
-                { value: 'office' as const, label: null, icon: Building2 },
-                { value: 'leave' as const, label: null, icon: Palmtree },
-                { value: 'wfh' as const, label: null, icon: Home },
+                { value: 'office' as const, label: 'Office', icon: Building2 },
+                { value: 'leave' as const, label: 'Leave', icon: Palmtree },
+                { value: 'wfh' as const, label: 'WFH', icon: Home },
               ] as const).map((opt) => {
                 const Icon = opt.icon;
+                const count = opt.value !== 'all' ? statusCounts[opt.value] : null;
                 return (
                   <button
                     key={opt.value}
                     onClick={() => setStatusFilter(opt.value)}
-                    className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                    className={`px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
                       statusFilter === opt.value
                         ? 'bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-gray-100'
                         : 'text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                     }`}
-                    title={opt.value === 'all' ? 'Show all' : `Show ${opt.value} only`}
+                    title={opt.value === 'all' ? 'Show all' : `Show ${opt.label} only${count !== null ? ` (${count})` : ''}`}
                   >
-                    {opt.label ? opt.label : Icon && <Icon size={14} />}
+                    {Icon && <Icon size={14} />}
+                    {opt.value === 'all' && 'All'}
+                    {count !== null && <span className="text-[10px] opacity-70">{count}</span>}
                   </button>
                 );
               })}
@@ -414,7 +465,18 @@ const TeamCalendarPage: React.FC = () => {
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600" />
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative flex items-stretch">
+            {/* Left scroll arrow */}
+            <button
+              type="button"
+              onClick={() => scrollWeek('left')}
+              className="sticky left-0 z-20 flex items-center justify-center px-1 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-r border-gray-200 dark:border-gray-800 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              title="Scroll left one week"
+            >
+              <ChevronLeft size={20} />
+            </button>
+
+            <div className="overflow-x-auto flex-1" ref={scrollRef}>
             <table className="w-full border-collapse">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-800">
@@ -479,9 +541,25 @@ const TeamCalendarPage: React.FC = () => {
                       colSpan={days.length + 1}
                       className="text-center py-12 text-gray-400 dark:text-gray-500"
                     >
-                      {team.length === 0
-                        ? 'No team members found'
-                        : 'No members match the current filters'}
+                      <div className="space-y-2">
+                        <div>
+                          {team.length === 0
+                            ? 'No team members found'
+                            : statusFilter !== 'all' && filterDate
+                              ? `No one is ${statusFilter === 'office' ? 'in Office' : statusFilter === 'leave' ? 'on Leave' : 'WFH'} on ${new Date(filterDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                              : statusFilter !== 'all'
+                                ? `No one has ${statusFilter === 'office' ? 'Office' : statusFilter === 'leave' ? 'Leave' : 'WFH'} status this month`
+                                : 'No members match the current filters'}
+                        </div>
+                        {(searchQuery || statusFilter !== 'all') && (
+                          <button
+                            onClick={() => { setSearchQuery(''); setStatusFilter('all'); setFilterDate(''); }}
+                            className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
+                          >
+                            Clear all filters
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -672,6 +750,17 @@ const TeamCalendarPage: React.FC = () => {
                 })}
               </tbody>
             </table>
+          </div>
+
+            {/* Right scroll arrow */}
+            <button
+              type="button"
+              onClick={() => scrollWeek('right')}
+              className="sticky right-0 z-20 flex items-center justify-center px-1 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-l border-gray-200 dark:border-gray-800 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              title="Scroll right one week"
+            >
+              <ChevronRight size={20} />
+            </button>
           </div>
         )}
 
