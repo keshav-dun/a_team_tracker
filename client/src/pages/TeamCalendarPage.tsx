@@ -325,6 +325,7 @@ const TeamCalendarPage: React.FC = () => {
           <span className="text-base">📌</span>
           <span className="text-sm font-medium">
             {todayLoading && !todayStatus && "Loading today's status…"}
+            {!todayLoading && !todayStatus && "Today's status unavailable"}
             {todayStatus?.isWeekend && "Today's Status: Weekend 🥳 It's the weekend — enjoy your time off!"}
             {todayStatus?.isHoliday && `Today's Status: Holiday 🎉 Today is ${todayStatus.holidayName || 'a holiday'}!`}
             {todayStatus && !todayStatus.isWeekend && !todayStatus.isHoliday && (
