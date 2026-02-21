@@ -25,3 +25,262 @@
     @apply ring-primary-500 border-primary-500;
   }
 }
+
+/* ================================================================== */
+/*  Chat Assistant                                                    */
+/* ================================================================== */
+
+/* ── Launcher button ────────────────────────── */
+.chat-launcher {
+  @apply fixed bottom-5 right-5 z-50
+         flex items-center justify-center
+         w-14 h-14 rounded-full
+         bg-primary-600 text-white
+         shadow-lg shadow-primary-600/30
+         transition-all duration-300 ease-in-out
+         hover:scale-110 hover:shadow-xl hover:shadow-primary-600/40
+         active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:ring-offset-2;
+}
+.chat-launcher--open {
+  @apply bg-gray-600 dark:bg-gray-500 shadow-gray-600/30;
+}
+
+/* ── Panel ────────────────────────────────── */
+.chat-panel {
+  @apply fixed z-50
+         flex flex-col
+         bg-white dark:bg-gray-800
+         border border-gray-200 dark:border-gray-700
+         shadow-2xl;
+  border-radius: 16px;
+  bottom: 88px;
+  right: 20px;
+  width: 370px;
+  height: 560px;
+  animation: chatSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes chatSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Mobile: full-width bottom sheet */
+@media (max-width: 480px) {
+  .chat-panel {
+    inset: auto 0 0 0;
+    width: 100%;
+    height: 85vh;
+    border-radius: 16px 16px 0 0;
+    animation: chatSlideUpMobile 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes chatSlideUpMobile {
+    from { opacity: 0; transform: translateY(100%); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .chat-launcher {
+    @apply bottom-4 right-4 w-12 h-12;
+  }
+}
+
+/* ── Header ───────────────────────────────── */
+.chat-header {
+  @apply flex items-center justify-between
+         px-4 py-3
+         border-b border-gray-200 dark:border-gray-700
+         bg-gray-50 dark:bg-gray-800/80
+         shrink-0;
+  border-radius: 16px 16px 0 0;
+}
+.chat-header-info {
+  @apply flex items-center gap-3;
+}
+.chat-header-avatar {
+  @apply flex items-center justify-center
+         w-9 h-9 rounded-full
+         bg-primary-100 dark:bg-primary-900/40
+         text-primary-600 dark:text-primary-400;
+}
+.chat-header-title {
+  @apply text-sm font-semibold text-gray-900 dark:text-gray-100 leading-tight;
+}
+.chat-header-subtitle {
+  @apply text-xs text-gray-500 dark:text-gray-400 leading-tight mt-0.5;
+}
+.chat-header-actions {
+  @apply flex items-center gap-1;
+}
+.chat-header-btn {
+  @apply flex items-center justify-center
+         w-8 h-8 rounded-lg
+         text-gray-400 dark:text-gray-500
+         hover:bg-gray-200 dark:hover:bg-gray-700
+         hover:text-gray-600 dark:hover:text-gray-300
+         transition-colors;
+}
+
+/* ── Messages ─────────────────────────────── */
+.chat-messages {
+  @apply flex-1 overflow-y-auto px-4 py-3 space-y-3;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+
+/* Row layout */
+.chat-row {
+  @apply flex gap-2 items-end;
+}
+.chat-row--user {
+  @apply justify-end;
+}
+.chat-row--assistant {
+  @apply justify-start;
+}
+
+/* Avatar (assistant) */
+.chat-avatar {
+  @apply flex items-center justify-center
+         w-7 h-7 rounded-full shrink-0
+         bg-primary-100 dark:bg-primary-900/40
+         text-primary-600 dark:text-primary-400;
+}
+
+/* Bubble wrapper */
+.chat-bubble-wrapper {
+  @apply flex flex-col max-w-[85%];
+}
+
+/* Bubbles */
+.chat-bubble {
+  @apply text-sm leading-relaxed px-3.5 py-2.5 whitespace-pre-wrap break-words;
+}
+.chat-bubble--user {
+  @apply bg-primary-600 text-white rounded-2xl rounded-br-md;
+}
+.chat-bubble--assistant {
+  @apply bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-2xl rounded-bl-md;
+}
+.chat-bubble--error {
+  @apply bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800;
+}
+
+/* Copy button */
+.chat-copy-btn {
+  @apply self-start mt-1 p-1 rounded
+         text-gray-400 dark:text-gray-500
+         hover:text-gray-600 dark:hover:text-gray-300
+         hover:bg-gray-100 dark:hover:bg-gray-700
+         transition-colors;
+}
+
+/* Sources */
+.chat-sources {
+  @apply flex flex-wrap items-center gap-1.5 mt-1.5;
+}
+.chat-sources-label {
+  @apply text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider;
+}
+.chat-source-tag {
+  @apply text-[10px] px-1.5 py-0.5 rounded
+         bg-gray-200 dark:bg-gray-600
+         text-gray-600 dark:text-gray-300;
+}
+
+/* ── Typing indicator ─────────────────────── */
+.typing-dots {
+  @apply inline-flex items-center gap-1 px-1;
+}
+.typing-dots span {
+  @apply w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500;
+  animation: typingBounce 1.4s infinite ease-in-out both;
+}
+.typing-dots span:nth-child(1) { animation-delay: 0s; }
+.typing-dots span:nth-child(2) { animation-delay: 0.16s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.32s; }
+
+@keyframes typingBounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40%           { transform: scale(1);   opacity: 1; }
+}
+
+/* ── Suggestions ──────────────────────────── */
+.chat-suggestions {
+  @apply flex flex-col items-center justify-center h-full text-center px-4 py-6 gap-3;
+}
+.chat-suggestions-icon {
+  @apply text-gray-300 dark:text-gray-600;
+}
+.chat-suggestions-label {
+  @apply text-sm font-medium text-gray-500 dark:text-gray-400;
+}
+.chat-suggestions-list {
+  @apply flex flex-col gap-2 w-full mt-1;
+}
+.chat-suggestion-chip {
+  @apply w-full text-left text-sm px-3.5 py-2.5 rounded-xl
+         border border-gray-200 dark:border-gray-600
+         text-gray-700 dark:text-gray-300
+         bg-white dark:bg-gray-700/50
+         hover:bg-primary-50 dark:hover:bg-primary-900/20
+         hover:border-primary-300 dark:hover:border-primary-700
+         hover:text-primary-700 dark:hover:text-primary-300
+         transition-all duration-150;
+}
+.chat-context-hint {
+  @apply text-[10px] text-gray-400 dark:text-gray-500 mt-2;
+}
+.chat-context-hint span {
+  @apply font-medium;
+}
+
+/* ── Input area ───────────────────────────── */
+.chat-input-area {
+  @apply px-3 py-2.5 border-t border-gray-200 dark:border-gray-700 shrink-0;
+}
+.chat-input-wrapper {
+  @apply flex items-end gap-2
+         bg-gray-100 dark:bg-gray-700
+         rounded-xl px-3 py-1.5;
+}
+.chat-input {
+  @apply flex-1 bg-transparent border-none resize-none
+         text-sm text-gray-800 dark:text-gray-200
+         placeholder-gray-400 dark:placeholder-gray-500
+         focus:outline-none focus:ring-0;
+  max-height: 120px;
+  min-height: 36px;
+  line-height: 1.5;
+}
+.chat-send-btn {
+  @apply flex items-center justify-center
+         w-8 h-8 rounded-lg shrink-0
+         bg-primary-600 text-white
+         hover:bg-primary-700
+         disabled:opacity-40 disabled:cursor-not-allowed
+         transition-colors;
+}
+.chat-char-count {
+  @apply block text-right text-[10px] text-gray-400 dark:text-gray-500 mt-1 mr-1;
+}
+
+/* ── Copied toast ─────────────────────────── */
+.chat-toast {
+  @apply absolute left-1/2 -translate-x-1/2 bottom-16
+         px-3 py-1 rounded-full text-xs font-medium
+         bg-gray-900 dark:bg-gray-100
+         text-white dark:text-gray-900
+         shadow-lg;
+  animation: toastFade 2s ease-in-out forwards;
+}
+@keyframes toastFade {
+  0%   { opacity: 0; transform: translate(-50%, 8px); }
+  15%  { opacity: 1; transform: translate(-50%, 0); }
+  85%  { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -4px); }
+}

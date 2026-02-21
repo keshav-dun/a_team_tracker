@@ -1,11 +1,24 @@
-import React from 'react';
+import React, { lazy, Suspense, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import ThemeToggle from './ThemeToggle';
 
+const ChatAssistant = lazy(() => import('./ChatAssistant'));
+
+const PAGE_NAMES: Record<string, string> = {
+  '/': 'Team Calendar',
+  '/my-calendar': 'My Calendar',
+  '/profile': 'Profile',
+  '/admin/users': 'Admin Users',
+  '/admin/holidays': 'Admin Holidays',
+  '/admin/insights': 'Insights',
+  '/admin/user-insights': 'User Insights',
+};
+
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout, isAdmin } = useAuth();
   const location = useLocation();
+  const pageName = useMemo(() => PAGE_NAMES[location.pathname] ?? '', [location.pathname]);
 
   const navLinks = [
     { to: '/', label: 'Team View' },
@@ -99,6 +112,11 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {children}
       </main>
+
+      {/* Chat Assistant (lazy-loaded) */}
+      <Suspense fallback={null}>
+        <ChatAssistant pageName={pageName} />
+      </Suspense>
     </div>
   );
 };
