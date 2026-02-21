@@ -5,8 +5,8 @@ import {
   updateUser,
   resetUserPassword,
   deleteUser,
-} from '../controllers/adminController';
-import { authenticate, requireAdmin } from '../middleware/auth';
+} from '../controllers/adminController.js';
+import { authenticate, requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
 

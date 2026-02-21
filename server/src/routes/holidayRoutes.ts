@@ -4,8 +4,8 @@ import {
   createHoliday,
   updateHoliday,
   deleteHoliday,
-} from '../controllers/holidayController';
-import { authenticate, requireAdmin } from '../middleware/auth';
+} from '../controllers/holidayController.js';
+import { authenticate, requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
 

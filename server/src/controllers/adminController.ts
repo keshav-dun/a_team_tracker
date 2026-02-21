@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import User from '../models/User';
-import Entry from '../models/Entry';
-import { AuthRequest } from '../types';
+import User from '../models/User.js';
+import Entry from '../models/Entry.js';
+import { AuthRequest } from '../types/index.js';
 
 /**
  * Get all users (admin only).

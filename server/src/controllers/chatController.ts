@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { embedText } from '../utils/embeddings';
-import config from '../config';
+import { embedText } from '../utils/embeddings.js';
+import config from '../config/index.js';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */

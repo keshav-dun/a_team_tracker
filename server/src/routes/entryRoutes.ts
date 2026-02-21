@@ -11,8 +11,8 @@ import {
   repeatPattern,
   copyRange,
   getTeamSummary,
-} from '../controllers/entryController';
-import { authenticate, requireAdmin } from '../middleware/auth';
+} from '../controllers/entryController.js';
+import { authenticate, requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
 

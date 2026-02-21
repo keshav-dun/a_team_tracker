@@ -3,8 +3,8 @@ import {
   getTemplates,
   createTemplate,
   deleteTemplate,
-} from '../controllers/templateController';
-import { authenticate } from '../middleware/auth';
+} from '../controllers/templateController.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
 

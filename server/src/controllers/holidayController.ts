@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import Holiday from '../models/Holiday';
+import Holiday from '../models/Holiday.js';
 
 /**
  * Get holidays for a date range.

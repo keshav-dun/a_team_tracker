@@ -1,8 +1,8 @@
 import { Response } from 'express';
-import User from '../models/User';
-import Entry from '../models/Entry';
-import Holiday from '../models/Holiday';
-import { AuthRequest } from '../types';
+import User from '../models/User.js';
+import Entry from '../models/Entry.js';
+import Holiday from '../models/Holiday.js';
+import { AuthRequest } from '../types/index.js';
 
 /**
  * Get insights / analytics for a given month.
@@ -60,7 +60,7 @@ export const getInsights = async (
 
     // ─── Build entry lookup: userId → date → entry ─
     const entryMap: Record<string, Record<string, { status: string; startTime?: string; endTime?: string; note?: string }>> = {};
-    entries.forEach((e) => {
+    entries.forEach((e: any) => {
       const uid = e.userId.toString();
       if (!entryMap[uid]) entryMap[uid] = {};
       entryMap[uid][e.date] = {
@@ -255,12 +255,12 @@ export const getUserInsights = async (
     ]);
 
     // Build holiday set
-    const holidaySet = new Set(holidays.map((h) => h.date));
-    const holidayList = holidays.map((h) => ({ date: h.date, name: h.name }));
+    const holidaySet = new Set(holidays.map((h: any) => h.date));
+    const holidayList = holidays.map((h: any) => ({ date: h.date, name: h.name }));
 
     // Build entry lookup: date → entry
     const entryMap: Record<string, { status: string; startTime?: string; endTime?: string; note?: string }> = {};
-    entries.forEach((e) => {
+    entries.forEach((e: any) => {
       entryMap[e.date] = {
         status: e.status,
         startTime: e.startTime,
@@ -302,7 +302,7 @@ export const getUserInsights = async (
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
       const isHoliday = holidaySet.has(dateStr);
       const isBeforeJoin = dateStr < userCreated;
-      const holiday = isHoliday ? holidays.find((h) => h.date === dateStr) : undefined;
+      const holiday = isHoliday ? holidays.find((h: any) => h.date === dateStr) : undefined;
 
       const entry = entryMap[dateStr];
 
@@ -419,7 +419,7 @@ export const exportInsightsCsv = async (
       Entry.find({ date: { $gte: startDate, $lte: endDate } }),
     ]);
 
-    const holidaySet = new Set(holidays.map((h) => h.date));
+    const holidaySet = new Set(holidays.map((h: any) => h.date));
 
     // Compute working days
     const workingDays: string[] = [];
@@ -433,7 +433,7 @@ export const exportInsightsCsv = async (
 
     // Build entry lookup
     const entryMap: Record<string, Record<string, string>> = {};
-    entries.forEach((e) => {
+    entries.forEach((e: any) => {
       const uid = e.userId.toString();
       if (!entryMap[uid]) entryMap[uid] = {};
       entryMap[uid][e.date] = e.status;

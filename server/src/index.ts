@@ -1,16 +1,16 @@
 import express from 'express';
 import cors from 'cors';
-import connectDB from './config/db';
-import config from './config';
-import authRoutes from './routes/authRoutes';
-import entryRoutes from './routes/entryRoutes';
-import adminRoutes from './routes/adminRoutes';
-import holidayRoutes from './routes/holidayRoutes';
-import templateRoutes from './routes/templateRoutes';
-import insightsRoutes from './routes/insightsRoutes';
-import statusRoutes from './routes/statusRoutes';
-import chatRoutes from './routes/chatRoutes';
-import { warmUpEmbeddings } from './utils/embeddings';
+import connectDB from './config/db.js';
+import config from './config/index.js';
+import authRoutes from './routes/authRoutes.js';
+import entryRoutes from './routes/entryRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
+import holidayRoutes from './routes/holidayRoutes.js';
+import templateRoutes from './routes/templateRoutes.js';
+import insightsRoutes from './routes/insightsRoutes.js';
+import statusRoutes from './routes/statusRoutes.js';
+import chatRoutes from './routes/chatRoutes.js';
+import { warmUpEmbeddings } from './utils/embeddings.js';
 
 const app = express();
 

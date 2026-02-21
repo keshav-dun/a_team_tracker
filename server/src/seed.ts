@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import User from './models/User';
-import Holiday from './models/Holiday';
+import User from './models/User.js';
+import Holiday from './models/Holiday.js';
 
 dotenv.config();
 
@@ -45,7 +45,7 @@ const seed = async () => {
 
     console.log('✅ Seed data created:');
     console.log(`   Admin: ${admin.email} / admin123`);
-    members.forEach((m) => console.log(`   Member: ${m.email} / password123`));
+    members.forEach((m: any) => console.log(`   Member: ${m.email} / password123`));
     console.log('   10 holidays created for 2026');
 
     await mongoose.disconnect();

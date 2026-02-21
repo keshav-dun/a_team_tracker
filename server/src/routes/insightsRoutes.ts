@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { authenticate, requireAdmin } from '../middleware/auth';
-import { getInsights, getUserInsights, exportInsightsCsv } from '../controllers/insightsController';
+import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { getInsights, getUserInsights, exportInsightsCsv } from '../controllers/insightsController.js';
 
 const router = Router();
 

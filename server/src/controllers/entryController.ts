@@ -1,13 +1,13 @@
 import { Response } from 'express';
-import Entry from '../models/Entry';
-import User from '../models/User';
-import { AuthRequest } from '../types';
+import Entry from '../models/Entry.js';
+import User from '../models/User.js';
+import { AuthRequest } from '../types/index.js';
 import {
   isMemberAllowedDate,
   getMonthRange,
   getTodayString,
   getFutureDateString,
-} from '../utils/date';
+} from '../utils/date.js';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -309,12 +309,12 @@ export const getTeamEntries = async (
     // Get all entries for the month
     const entries = await Entry.find({
       date: { $gte: startDate, $lte: endDate },
-      userId: { $in: users.map((u) => u._id) },
+      userId: { $in: users.map((u: any) => u._id) },
     });
 
     // Build a lookup: { [userId]: { [date]: { status, note?, startTime?, endTime? } } }
     const entryMap: Record<string, Record<string, { status: string; note?: string; startTime?: string; endTime?: string }>> = {};
-    entries.forEach((e) => {
+    entries.forEach((e: any) => {
       const uid = e.userId.toString();
       if (!entryMap[uid]) entryMap[uid] = {};
       entryMap[uid][e.date] = {
@@ -325,7 +325,7 @@ export const getTeamEntries = async (
       };
     });
 
-    const teamData = users.map((user) => ({
+    const teamData = users.map((user: any) => ({
       user: {
         _id: user._id,
         name: user.name,
@@ -659,7 +659,7 @@ export const copyRange = async (
     });
 
     const sourceMap: Record<string, typeof sourceEntries[0]> = {};
-    sourceEntries.forEach((e) => { sourceMap[e.date] = e; });
+    sourceEntries.forEach((e: any) => { sourceMap[e.date] = e; });
 
     // Calculate offset in days
     const srcStartDate = new Date(sourceStart + 'T00:00:00');
@@ -750,7 +750,7 @@ export const getTeamSummary = async (
 
     const users = await User.find({ isActive: true }).select('_id');
     const totalMembers = users.length;
-    const userIds = users.map((u) => u._id);
+    const userIds = users.map((u: any) => u._id);
 
     const entries = await Entry.find({
       date: { $gte: startDate, $lte: endDate },
@@ -769,7 +769,7 @@ export const getTeamSummary = async (
     }
 
     // Tally entries
-    entries.forEach((e) => {
+    entries.forEach((e: any) => {
       if (!summary[e.date]) return;
       if (e.status === 'office') {
         summary[e.date].office++;

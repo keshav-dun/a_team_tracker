@@ -1,6 +1,6 @@
 import { Response } from 'express';
-import Template from '../models/Template';
-import { AuthRequest } from '../types';
+import Template from '../models/Template.js';
+import { AuthRequest } from '../types/index.js';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 

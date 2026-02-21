@@ -1,8 +1,8 @@
 import { Response } from 'express';
-import User from '../models/User';
-import Entry from '../models/Entry';
-import Holiday from '../models/Holiday';
-import { AuthRequest } from '../types';
+import User from '../models/User.js';
+import Entry from '../models/Entry.js';
+import Holiday from '../models/Holiday.js';
+import { AuthRequest } from '../types/index.js';
 
 /**
  * Get today's attendance status for all active employees.
@@ -36,7 +36,7 @@ export const getTodayStatus = async (
 
     // Build entry map: userId → status
     const entryMap: Record<string, { status: string; note?: string; startTime?: string; endTime?: string }> = {};
-    entries.forEach((e) => {
+    entries.forEach((e: any) => {
       entryMap[e.userId.toString()] = {
         status: e.status,
         note: e.note,

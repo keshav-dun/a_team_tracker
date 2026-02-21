@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import User from '../models/User';
-import config from '../config';
-import { AuthRequest, JwtPayload } from '../types';
+import User from '../models/User.js';
+import config from '../config/index.js';
+import { AuthRequest, JwtPayload } from '../types/index.js';
 
 const generateToken = (user: { _id: string; role: string }): string => {
   const payload: JwtPayload = {

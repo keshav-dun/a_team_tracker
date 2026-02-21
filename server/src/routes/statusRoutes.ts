@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { authenticate } from '../middleware/auth';
-import { getTodayStatus } from '../controllers/statusController';
+import { authenticate } from '../middleware/auth.js';
+import { getTodayStatus } from '../controllers/statusController.js';
 
 const router = Router();
 
