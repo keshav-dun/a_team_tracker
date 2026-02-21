@@ -17,12 +17,13 @@ const STATUS_CONFIG: Record<
   UserDayBreakdown['status'],
   { label: string; emoji: string; bg: string; text: string }
 > = {
-  office:      { label: 'Office',     emoji: '🏢', bg: 'bg-blue-50 dark:bg-blue-900/30',   text: 'text-blue-700 dark:text-blue-300' },
-  leave:       { label: 'Leave',      emoji: '🏖️', bg: 'bg-orange-50 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300' },
-  wfh:         { label: 'WFH',        emoji: '🏠', bg: 'bg-emerald-50 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-300' },
-  holiday:     { label: 'Holiday',    emoji: '📌', bg: 'bg-red-50 dark:bg-red-900/30',      text: 'text-red-700 dark:text-red-300' },
-  weekend:     { label: 'Weekend',    emoji: '😴', bg: 'bg-gray-100 dark:bg-gray-700/50',   text: 'text-gray-400 dark:text-gray-500' },
-  'not-joined': { label: 'Not Joined', emoji: '⏳', bg: 'bg-gray-100 dark:bg-gray-700/50',   text: 'text-gray-400 dark:text-gray-500' },
+  office:          { label: 'Office',         emoji: '🏢', bg: 'bg-blue-50 dark:bg-blue-900/30',    text: 'text-blue-700 dark:text-blue-300' },
+  leave:           { label: 'Leave',          emoji: '🏖️', bg: 'bg-orange-50 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300' },
+  'half-day-leave': { label: 'Half-Day Leave', emoji: '🌗', bg: 'bg-amber-50 dark:bg-amber-900/30',  text: 'text-amber-700 dark:text-amber-300' },
+  wfh:             { label: 'WFH',            emoji: '🏠', bg: 'bg-emerald-50 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-300' },
+  holiday:         { label: 'Holiday',        emoji: '📌', bg: 'bg-red-50 dark:bg-red-900/30',      text: 'text-red-700 dark:text-red-300' },
+  weekend:         { label: 'Weekend',        emoji: '😴', bg: 'bg-gray-100 dark:bg-gray-700/50',   text: 'text-gray-400 dark:text-gray-500' },
+  'not-joined':    { label: 'Not Joined',     emoji: '⏳', bg: 'bg-gray-100 dark:bg-gray-700/50',   text: 'text-gray-400 dark:text-gray-500' },
 };
 
 const pctColor = (pct: number, good: boolean) => {
@@ -300,6 +301,7 @@ const UserInsightsPage: React.FC = () => {
                   <option value="all">All Days</option>
                   <option value="office">Office</option>
                   <option value="leave">Leave</option>
+                  <option value="half-day-leave">Half-Day Leave</option>
                   <option value="wfh">WFH</option>
                   <option value="holiday">Holiday</option>
                   <option value="weekend">Weekend</option>
@@ -334,6 +336,11 @@ const UserInsightsPage: React.FC = () => {
                         <td className="px-2 sm:px-4 py-2">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.text}`}>
                             {cfg.emoji} <span className="hidden sm:inline">{cfg.label}</span>
+                            {day.status === 'half-day-leave' && day.halfDayPortion && (
+                              <span className="text-[10px] opacity-75 ml-1 hidden sm:inline">
+                                ({day.halfDayPortion === 'first-half' ? 'AM' : 'PM'} leave, {day.workingPortion === 'office' ? '🏢 Office' : '🏠 WFH'} other half)
+                              </span>
+                            )}
                             {day.holidayName && (
                               <span className="text-[10px] opacity-75 ml-1 hidden sm:inline">({day.holidayName})</span>
                             )}

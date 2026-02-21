@@ -1,12 +1,18 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export type StatusType = 'office' | 'leave';
+export type LeaveDuration = 'full' | 'half';
+export type HalfDayPortion = 'first-half' | 'second-half';
+export type WorkingPortion = 'wfh' | 'office';
 
 export interface IEntry extends Document {
   _id: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
   date: string; // YYYY-MM-DD format
   status: StatusType;
+  leaveDuration?: LeaveDuration;
+  halfDayPortion?: HalfDayPortion;
+  workingPortion?: WorkingPortion;
   note?: string;
   startTime?: string; // HH:mm (24h, IST)
   endTime?: string;   // HH:mm (24h, IST)
@@ -31,6 +37,18 @@ const entrySchema = new Schema<IEntry>(
       type: String,
       enum: ['office', 'leave'],
       required: [true, 'Status is required'],
+    },
+    leaveDuration: {
+      type: String,
+      enum: ['full', 'half'],
+    },
+    halfDayPortion: {
+      type: String,
+      enum: ['first-half', 'second-half'],
+    },
+    workingPortion: {
+      type: String,
+      enum: ['wfh', 'office'],
     },
     note: {
       type: String,

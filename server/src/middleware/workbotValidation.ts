@@ -34,6 +34,9 @@ const applyItemSchema = z.object({
     { message: 'Date must be a valid calendar date' }
   ),
   status: z.enum(['office', 'leave', 'clear']),
+  leaveDuration: z.enum(['full', 'half']).optional(),
+  halfDayPortion: z.enum(['first-half', 'second-half']).optional(),
+  workingPortion: z.enum(['wfh', 'office']).optional(),
   note: z.string().max(MAX_NOTE_LENGTH).optional(),
 });
 

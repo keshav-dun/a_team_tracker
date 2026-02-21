@@ -50,20 +50,20 @@ export const entryApi = {
   getTeamSummary: (month: string) =>
     api.get<ApiResponse<TeamSummary>>('/entries/team-summary', { params: { month } }),
 
-  upsertEntry: (date: string, status: 'office' | 'leave', opts?: { note?: string; startTime?: string; endTime?: string }) =>
+  upsertEntry: (date: string, status: 'office' | 'leave', opts?: { note?: string; startTime?: string; endTime?: string; leaveDuration?: 'full' | 'half'; halfDayPortion?: 'first-half' | 'second-half'; workingPortion?: 'wfh' | 'office' }) =>
     api.put<ApiResponse<Entry>>('/entries', { date, status, ...opts }),
 
   deleteEntry: (date: string) =>
     api.delete<ApiResponse>(`/entries/${date}`),
 
-  adminUpsertEntry: (userId: string, date: string, status: 'office' | 'leave', opts?: { note?: string; startTime?: string; endTime?: string }) =>
+  adminUpsertEntry: (userId: string, date: string, status: 'office' | 'leave', opts?: { note?: string; startTime?: string; endTime?: string; leaveDuration?: 'full' | 'half'; halfDayPortion?: 'first-half' | 'second-half'; workingPortion?: 'wfh' | 'office' }) =>
     api.put<ApiResponse<Entry>>('/entries/admin', { userId, date, status, ...opts }),
 
   adminDeleteEntry: (userId: string, date: string) =>
     api.delete<ApiResponse>(`/entries/admin/${userId}/${date}`),
 
   // Bulk operations
-  bulkSet: (dates: string[], status: 'office' | 'leave' | 'clear', opts?: { note?: string; startTime?: string; endTime?: string }) =>
+  bulkSet: (dates: string[], status: 'office' | 'leave' | 'clear', opts?: { note?: string; startTime?: string; endTime?: string; leaveDuration?: 'full' | 'half'; halfDayPortion?: 'first-half' | 'second-half'; workingPortion?: 'wfh' | 'office' }) =>
     api.post<ApiResponse<BulkResult>>('/entries/bulk', { dates, status, ...opts }),
 
   copyFromDate: (sourceDate: string, targetDates: string[]) =>
@@ -77,6 +77,9 @@ export const entryApi = {
     note?: string;
     startTime?: string;
     endTime?: string;
+    leaveDuration?: 'full' | 'half';
+    halfDayPortion?: 'first-half' | 'second-half';
+    workingPortion?: 'wfh' | 'office';
   }) => api.post<ApiResponse<BulkResult>>('/entries/repeat', data),
 
   copyRange: (sourceStart: string, sourceEnd: string, targetStart: string) =>
@@ -120,10 +123,10 @@ export const templateApi = {
   getTemplates: () =>
     api.get<ApiResponse<Template[]>>('/templates'),
 
-  createTemplate: (data: { name: string; status: 'office' | 'leave'; startTime?: string; endTime?: string; note?: string }) =>
+  createTemplate: (data: { name: string; status: 'office' | 'leave'; startTime?: string; endTime?: string; note?: string; leaveDuration?: 'full' | 'half'; halfDayPortion?: 'first-half' | 'second-half'; workingPortion?: 'wfh' | 'office' }) =>
     api.post<ApiResponse<Template>>('/templates', data),
 
-  updateTemplate: (id: string, data: { name?: string; status?: 'office' | 'leave'; startTime?: string; endTime?: string; note?: string }) =>
+  updateTemplate: (id: string, data: { name?: string; status?: 'office' | 'leave'; startTime?: string; endTime?: string; note?: string; leaveDuration?: 'full' | 'half'; halfDayPortion?: 'first-half' | 'second-half'; workingPortion?: 'wfh' | 'office' }) =>
     api.put<ApiResponse<Template>>(`/templates/${id}`, data),
 
   deleteTemplate: (id: string) =>

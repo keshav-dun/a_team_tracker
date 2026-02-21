@@ -1,12 +1,18 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export type TemplateStatus = 'office' | 'leave';
+export type TemplateLeaveDuration = 'full' | 'half';
+export type TemplateHalfDayPortion = 'first-half' | 'second-half';
+export type TemplateWorkingPortion = 'wfh' | 'office';
 
 export interface ITemplate extends Document {
   _id: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
   name: string;
   status: TemplateStatus;
+  leaveDuration?: TemplateLeaveDuration;
+  halfDayPortion?: TemplateHalfDayPortion;
+  workingPortion?: TemplateWorkingPortion;
   startTime?: string;
   endTime?: string;
   note?: string;
@@ -32,6 +38,18 @@ const templateSchema = new Schema<ITemplate>(
       type: String,
       enum: ['office', 'leave'],
       required: [true, 'Status is required'],
+    },
+    leaveDuration: {
+      type: String,
+      enum: ['full', 'half'],
+    },
+    halfDayPortion: {
+      type: String,
+      enum: ['first-half', 'second-half'],
+    },
+    workingPortion: {
+      type: String,
+      enum: ['wfh', 'office'],
     },
     startTime: {
       type: String,

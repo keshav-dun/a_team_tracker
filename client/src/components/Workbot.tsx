@@ -41,8 +41,8 @@ interface WorkbotProps {
 const EXAMPLE_COMMANDS = [
   'Mark Monday Wednesday Friday of next month as office.',
   'Set next week as leave.',
+  'Half day leave tomorrow morning, WFH other half.',
   'Clear Friday.',
-  'Office every Monday next month.',
 ];
 
 const STATUS_OPTIONS: ('office' | 'leave' | 'clear')[] = ['office', 'leave', 'clear'];
@@ -138,6 +138,11 @@ const Workbot: React.FC<WorkbotProps> = ({ onBack }) => {
         date: c.date,
         status: c.status,
         note: c.note,
+        ...(c.status === 'leave' && c.leaveDuration === 'half' ? {
+          leaveDuration: c.leaveDuration,
+          halfDayPortion: c.halfDayPortion,
+          workingPortion: c.workingPortion,
+        } : {}),
       }));
       const res = await workbotApi.apply(items);
       const result = res.data?.data;
@@ -414,23 +419,30 @@ const Workbot: React.FC<WorkbotProps> = ({ onBack }) => {
                       <td>{c.day}</td>
                       <td>
                         {c.valid ? (
-                          <select
-                            className="workbot-status-select"
-                            value={c.status}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === 'office' || val === 'leave' || val === 'clear') {
-                                changeRowStatus(c.date, val);
-                              }
-                            }}
-                            aria-label={`Status for ${c.date}`}
-                          >
-                            {STATUS_OPTIONS.map((s) => (
-                              <option key={s} value={s}>
-                                {s}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="flex flex-col gap-0.5">
+                            <select
+                              className="workbot-status-select"
+                              value={c.status}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === 'office' || val === 'leave' || val === 'clear') {
+                                  changeRowStatus(c.date, val);
+                                }
+                              }}
+                              aria-label={`Status for ${c.date}`}
+                            >
+                              {STATUS_OPTIONS.map((s) => (
+                                <option key={s} value={s}>
+                                  {s}
+                                </option>
+                              ))}
+                            </select>
+                            {c.status === 'leave' && c.leaveDuration === 'half' && (
+                              <span className="text-[10px] text-orange-600 dark:text-orange-400">
+                                ½ {c.halfDayPortion === 'first-half' ? 'AM' : 'PM'} leave, {c.workingPortion === 'office' ? '🏢' : '🏠'} other half
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span className="workbot-invalid-badge" title={c.validationMessage}>
                             {c.validationMessage}

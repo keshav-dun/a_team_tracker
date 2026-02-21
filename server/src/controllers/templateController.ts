@@ -33,7 +33,7 @@ export const createTemplate = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { name, status, startTime, endTime, note } = req.body;
+    const { name, status, startTime, endTime, note, leaveDuration, halfDayPortion, workingPortion } = req.body;
 
     if (!name || !name.trim()) {
       res.status(400).json({ success: false, message: 'Template name is required' });
@@ -62,14 +62,32 @@ export const createTemplate = async (
       return;
     }
 
-    const template = await Template.create({
+    // Half-day leave validation
+    if (leaveDuration === 'half' && status !== 'leave') {
+      res.status(400).json({ success: false, message: 'Half-day duration is only valid for leave status' });
+      return;
+    }
+    if (leaveDuration === 'half' && !halfDayPortion) {
+      res.status(400).json({ success: false, message: 'halfDayPortion is required when leaveDuration is half' });
+      return;
+    }
+
+    const templateData: Record<string, any> = {
       userId: req.user!._id,
       name: sanitizeText(name),
       status,
       startTime: startTime || undefined,
       endTime: endTime || undefined,
       note: note ? sanitizeText(note) : undefined,
-    });
+    };
+
+    if (status === 'leave' && leaveDuration === 'half') {
+      templateData.leaveDuration = 'half';
+      templateData.halfDayPortion = halfDayPortion;
+      templateData.workingPortion = workingPortion || 'wfh';
+    }
+
+    const template = await Template.create(templateData);
 
     res.status(201).json({ success: true, data: template });
   } catch (error: any) {
@@ -91,9 +109,10 @@ export const updateTemplate = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { name, status, startTime, endTime, note } = req.body;
+    const { name, status, startTime, endTime, note, leaveDuration, halfDayPortion, workingPortion } = req.body;
 
     const update: Record<string, any> = {};
+    const unsetFields: Record<string, 1> = {};
     if (name !== undefined) {
       if (!name.trim()) { res.status(400).json({ success: false, message: 'Template name cannot be empty' }); return; }
       update.name = sanitizeText(name);
@@ -111,7 +130,9 @@ export const updateTemplate = async (
     if (!existing) { res.status(404).json({ success: false, message: 'Template not found' }); return; }
 
     // If no fields were provided to update, return the existing template as-is
-    if (Object.keys(update).length === 0) {
+    const allFieldKeys = ['name', 'status', 'startTime', 'endTime', 'note', 'leaveDuration', 'halfDayPortion', 'workingPortion'];
+    const hasUpdate = allFieldKeys.some((k) => (req.body as any)[k] !== undefined);
+    if (!hasUpdate) {
       res.json({ success: true, data: existing });
       return;
     }
@@ -127,9 +148,29 @@ export const updateTemplate = async (
     }
     if (effectiveStart && effectiveEnd && effectiveEnd <= effectiveStart) { res.status(400).json({ success: false, message: 'endTime must be after startTime' }); return; }
 
+    // Handle half-day leave fields
+    const effectiveStatus = update.status ?? existing.status;
+    if (effectiveStatus === 'leave' && leaveDuration === 'half') {
+      const effectivePortion = halfDayPortion ?? (existing as any).halfDayPortion;
+      if (!effectivePortion) {
+        res.status(400).json({ success: false, message: 'halfDayPortion is required when leaveDuration is half' }); return;
+      }
+      update.leaveDuration = 'half';
+      update.halfDayPortion = effectivePortion;
+      update.workingPortion = workingPortion ?? (existing as any).workingPortion ?? 'wfh';
+    } else if (effectiveStatus === 'office' || leaveDuration === 'full' || (effectiveStatus === 'leave' && !leaveDuration && !(existing as any).leaveDuration)) {
+      // Clear half-day fields when switching to office or full-day leave
+      unsetFields.leaveDuration = 1;
+      unsetFields.halfDayPortion = 1;
+      unsetFields.workingPortion = 1;
+    }
+
+    const updateOp: Record<string, any> = { $set: update };
+    if (Object.keys(unsetFields).length > 0) updateOp.$unset = unsetFields;
+
     const template = await Template.findOneAndUpdate(
       { _id: req.params.id, userId: req.user!._id },
-      { $set: update },
+      updateOp,
       { new: true, runValidators: true }
     );
 
