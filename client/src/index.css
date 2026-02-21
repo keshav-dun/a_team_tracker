@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Glass panel style for Team Calendar */
+.glass-panel {
+  @apply bg-white dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm backdrop-blur-sm;
+}
+
 @layer base {
   html {
     color-scheme: light;
