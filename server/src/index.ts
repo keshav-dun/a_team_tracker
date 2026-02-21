@@ -9,6 +9,8 @@ import holidayRoutes from './routes/holidayRoutes';
 import templateRoutes from './routes/templateRoutes';
 import insightsRoutes from './routes/insightsRoutes';
 import statusRoutes from './routes/statusRoutes';
+import chatRoutes from './routes/chatRoutes';
+import { warmUpEmbeddings } from './utils/embeddings';
 
 const app = express();
 
@@ -24,6 +26,7 @@ app.use('/api/holidays', holidayRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/insights', insightsRoutes);
 app.use('/api/status', statusRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -33,6 +36,8 @@ app.get('/api/health', (_req, res) => {
 // Start server
 const start = async () => {
   await connectDB();
+  // Pre-load embedding model in the background so first chat request is fast
+  warmUpEmbeddings();
   app.listen(config.port, () => {
     console.log(`🚀 Server running on port ${config.port}`);
   });

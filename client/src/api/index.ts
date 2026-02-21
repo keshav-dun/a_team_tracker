@@ -140,3 +140,14 @@ export const statusApi = {
   getToday: () =>
     api.get<ApiResponse<TodayStatusResponse>>('/status/today'),
 };
+
+// ─── Chat ────────────────────────────────────
+export interface ChatResponse {
+  answer: string;
+  sources: { page: number; source: string }[];
+}
+
+export const chatApi = {
+  ask: (question: string) =>
+    api.post<ChatResponse>('/chat', { question }),
+};
