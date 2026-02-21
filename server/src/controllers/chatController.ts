@@ -82,7 +82,7 @@ async function generateAnswer(
       'X-Title': 'A-Team-Tracker Assistant',
     },
     body: JSON.stringify({
-      model: 'mistralai/mistral-7b-instruct:free',
+      model: 'arcee-ai/trinity-large-preview:free',
       messages: [
         { role: 'system', content: systemPrompt },
       ],
