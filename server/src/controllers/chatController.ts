@@ -271,7 +271,18 @@ export const chat = async (req: Request, res: Response): Promise<void> => {
     try {
       answer = await generateAnswer(prompt);
     } catch (llmErr) {
+      const errMsg = llmErr instanceof Error ? llmErr.message : String(llmErr);
       console.error('Chat: LLM generation failed:', llmErr);
+
+      // Help users fix the most common cause: missing API key
+      if (errMsg.includes('OPENROUTER_API_KEY') && errMsg.includes('not configured')) {
+        res.status(503).json({
+          success: false,
+          message: 'Chat is not configured. Set OPENROUTER_API_KEY in server/.env (get a key at https://openrouter.ai/keys).',
+        });
+        return;
+      }
+
       res.status(500).json({
         success: false,
         message: 'Failed to generate an answer. Please try again.',

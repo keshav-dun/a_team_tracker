@@ -1,10 +1,34 @@
-import { pipeline, FeatureExtractionPipeline } from '@xenova/transformers';
+// Dynamic import required for ESM module @xenova/transformers in CommonJS project
 
 const MODEL_NAME = 'Xenova/all-MiniLM-L6-v2';
 const EXPECTED_DIMENSIONS = 384;
 
+// Types for the transformers library
+interface PipelineOutput {
+  data: Float32Array;
+}
+
+interface FeatureExtractionPipeline {
+  (text: string, options: { pooling: string; normalize: boolean }): Promise<PipelineOutput>;
+}
+
+interface TransformersModule {
+  pipeline: (task: string, model: string, options?: { quantized: boolean }) => Promise<FeatureExtractionPipeline>;
+}
+
+let transformersModule: TransformersModule | null = null;
 let embedder: FeatureExtractionPipeline | null = null;
 let initPromise: Promise<FeatureExtractionPipeline> | null = null;
+
+/**
+ * Load the transformers module using dynamic import
+ */
+async function getTransformers(): Promise<TransformersModule> {
+  if (transformersModule) return transformersModule;
+  // Dynamic import for ESM module
+  transformersModule = await import('@xenova/transformers') as TransformersModule;
+  return transformersModule;
+}
 
 /**
  * Initialise (or return cached) the embedding pipeline.
@@ -16,6 +40,7 @@ async function getEmbedder(): Promise<FeatureExtractionPipeline> {
   // Prevent duplicate init when several requests arrive before the
   // first load completes.
   if (!initPromise) {
+    const { pipeline } = await getTransformers();
     initPromise = pipeline('feature-extraction', MODEL_NAME, {
       quantized: true, // smaller & faster
     });

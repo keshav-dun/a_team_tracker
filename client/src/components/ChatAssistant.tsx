@@ -214,11 +214,25 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ pageName }) => {
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, assistantMsg]);
-      } catch {
+      } catch (err: unknown) {
+        const backendMessage =
+          err &&
+          typeof err === 'object' &&
+          'response' in err &&
+          err.response &&
+          typeof err.response === 'object' &&
+          'data' in err.response &&
+          err.response.data &&
+          typeof err.response.data === 'object' &&
+          'message' in err.response.data &&
+          typeof (err.response.data as { message: unknown }).message === 'string'
+            ? (err.response.data as { message: string }).message
+            : null;
+        const text = backendMessage || 'Sorry, something went wrong. Please try again.';
         const errMsg: Message = {
           id: nextId(),
           role: 'assistant',
-          text: 'Sorry, something went wrong. Please try again.',
+          text,
           error: true,
           timestamp: new Date(),
         };
