@@ -87,13 +87,13 @@ function friendlyError(errorCode: string): string {
     case 'no-speech':
       return 'No speech detected. Please try again.';
     case 'network':
-      return 'Browser speech service unavailable — retries exhausted. Try again in a moment.';
+      return 'Voice input is currently only supported in Google Chrome. Please switch to Chrome to use this feature.';
     case 'aborted':
       return 'Speech recognition was interrupted.';
     case 'audio-capture':
       return 'No microphone found. Please connect one and try again.';
     case 'service-not-allowed':
-      return 'Speech recognition service is not available.';
+      return 'Speech recognition service is not available. This feature is currently only supported in Google Chrome.';
     default:
       return 'Speech recognition failed. Please type your input instead.';
   }

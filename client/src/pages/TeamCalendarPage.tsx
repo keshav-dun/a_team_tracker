@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { entryApi, holidayApi, statusApi } from '../api';
+import { entryApi, holidayApi, statusApi, eventApi } from '../api';
 import { useAuth } from '../context/AuthContext';
-import type { TeamMemberData, Holiday, StatusType, EntryDetail, DaySummary, TodayStatusResponse } from '../types';
+import type { TeamMemberData, Holiday, StatusType, EntryDetail, DaySummary, TodayStatusResponse, CalendarEvent } from '../types';
 import {
   getCurrentMonth,
   offsetMonth,
@@ -55,6 +55,10 @@ const TeamCalendarPage: React.FC = () => {
   const [todayLoading, setTodayLoading] = useState(true);
   const [todayExpanded, setTodayExpanded] = useState(true);
 
+  // Events
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [eventDetail, setEventDetail] = useState<CalendarEvent | null>(null);
+
   const days = getDaysInMonth(month);
 
   // Derive filtered team list
@@ -96,6 +100,14 @@ const TeamCalendarPage: React.FC = () => {
       });
       setHolidays(hMap);
       setSummary(summaryRes.data.data || {});
+
+      // Fetch events
+      try {
+        const eventRes = await eventApi.getEvents(days[0], days[days.length - 1]);
+        setEvents(eventRes.data.data || []);
+      } catch {
+        // Non-critical
+      }
     } catch {
       toast.error('Failed to load team data');
     } finally {
@@ -260,6 +272,13 @@ const TeamCalendarPage: React.FC = () => {
     if (!s) return '';
     return `🏢 ${s.office} in office · 🌴 ${s.leave} on leave · 🏠 ${s.wfh} WFH`;
   };
+
+  // Events lookup: date → events[]
+  const eventsMap: Record<string, CalendarEvent[]> = {};
+  events.forEach((ev) => {
+    if (!eventsMap[ev.date]) eventsMap[ev.date] = [];
+    eventsMap[ev.date].push(ev);
+  });
 
   return (
     <div>
@@ -573,12 +592,18 @@ const TeamCalendarPage: React.FC = () => {
                 {days.map((date) => {
                   const weekend = isWeekend(date);
                   const today = isToday(date);
+                  const dateEvents = eventsMap[date] || [];
+                  const hasEvents = dateEvents.length > 0;
+                  const isMandatory = dateEvents.some(
+                    (e) => e.eventType === 'mandatory-office' || /mandatory/i.test(e.title)
+                  );
                   return (
                     <th
                       key={date}
                       className={`px-1 py-2 text-center min-w-[36px] ${
                         weekend ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500' : ''
-                      } ${today ? 'bg-primary-50 dark:bg-primary-900/30' : ''}`}
+                      } ${today ? 'bg-primary-50 dark:bg-primary-900/30' : ''} ${isMandatory ? 'bg-red-50 dark:bg-red-900/20' : ''}`}
+                      title={hasEvents ? dateEvents.map((e) => `📌 ${e.title}`).join('\n') : undefined}
                     >
                       <div className="text-[10px] text-gray-500 dark:text-gray-400">
                         {getShortDayName(date)}
@@ -586,6 +611,14 @@ const TeamCalendarPage: React.FC = () => {
                       <div className={`text-xs font-semibold ${today ? 'text-primary-600' : ''}`}>
                         {getDayNumber(date)}
                       </div>
+                      {hasEvents && (
+                        <div
+                          className="flex justify-center gap-0.5 mt-0.5 cursor-pointer"
+                          onClick={() => setEventDetail(dateEvents[0])}
+                        >
+                          <div className={`w-1.5 h-1.5 rounded-full ${isMandatory ? 'bg-red-500' : 'bg-amber-500'}`} />
+                        </div>
+                      )}
                     </th>
                   );
                 })}
@@ -816,6 +849,48 @@ const TeamCalendarPage: React.FC = () => {
           Showing {filteredTeam.length} of {team.length} team members · {days.length} days ·
           Click a cell to change status, set hours &amp; add notes ·
           Top row shows daily office/leave/WFH counts
+        </div>
+      )}
+
+      {/* Event Detail Modal */}
+      {eventDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50" onClick={() => setEventDetail(null)}>
+          <div
+            className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4 p-6 transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xl">📌</span>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{eventDetail.title}</h2>
+            </div>
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+              {new Date(eventDetail.date + 'T00:00:00').toLocaleDateString('en-US', {
+                weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+              })}
+            </div>
+            {eventDetail.eventType && (
+              <div className="inline-block px-2 py-0.5 text-xs rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 mb-3">
+                {eventDetail.eventType}
+              </div>
+            )}
+            {eventDetail.description && (
+              <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">{eventDetail.description}</p>
+            )}
+            {eventDetail.createdBy && (
+              <p className="text-xs text-gray-500 dark:text-gray-500">
+                Created by {eventDetail.createdBy.name}
+              </p>
+            )}
+            <div className="flex justify-end mt-4">
+              <button
+                type="button"
+                onClick={() => setEventDetail(null)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

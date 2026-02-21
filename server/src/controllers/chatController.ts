@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { embedText } from '../utils/embeddings.js';
 import config from '../config/index.js';
+import { AuthRequest } from '../types/index.js';
+import { chatQuery } from './analyticsController.js';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -157,6 +159,24 @@ async function generateAnswer(
 }
 
 /* ------------------------------------------------------------------ */
+/*  Data-aware analytics (inline helper)                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Attempt to answer the user's question via the analytics handler.
+ * Returns the answer string, or null if the query is not data-related
+ * (i.e. should fall through to RAG).
+ */
+async function tryAnalyticsQuery(
+  question: string,
+  req: AuthRequest
+): Promise<string | null> {
+  // Import the intent classifier and handlers from analyticsController
+  const { classifyAndAnswer } = await import('./analyticsController.js');
+  return classifyAndAnswer(question, req.user!);
+}
+
+/* ------------------------------------------------------------------ */
 /*  Vector search                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -222,6 +242,20 @@ export const chat = async (req: Request, res: Response): Promise<void> => {
         message: `Question exceeds the maximum length of ${MAX_QUESTION_LENGTH} characters.`,
       });
       return;
+    }
+
+    /* 1b ── Try data-aware analytics handler first ------------------ */
+    const authReq = req as AuthRequest;
+    if (authReq.user) {
+      try {
+        const analyticsResult = await tryAnalyticsQuery(question, authReq);
+        if (analyticsResult) {
+          res.json({ answer: analyticsResult, sources: [] });
+          return;
+        }
+      } catch (err) {
+        console.warn('Chat: analytics handler failed, falling through to RAG:', err);
+      }
     }
 
     /* 2 ── Embed the query ------------------------------------------ */

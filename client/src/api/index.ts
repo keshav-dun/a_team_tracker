@@ -18,6 +18,8 @@ import type {
   WorkbotResolveResponse,
   WorkbotApplyItem,
   WorkbotApplyResult,
+  CalendarEvent,
+  MyPercentageResponse,
 } from '../types';
 
 // ─── Auth ────────────────────────────────────
@@ -170,4 +172,25 @@ export const workbotApi = {
   /** Step 3: Apply confirmed changes */
   apply: (changes: WorkbotApplyItem[]) =>
     api.post<ApiResponse<WorkbotApplyResult>>('/workbot/apply', { changes }),
+};
+
+// ─── Events (Admin Event Tagging) ────────────
+export const eventApi = {
+  getEvents: (startDate?: string, endDate?: string) =>
+    api.get<ApiResponse<CalendarEvent[]>>('/events', { params: { startDate, endDate } }),
+
+  createEvent: (data: { date: string; title: string; description?: string; eventType?: string }) =>
+    api.post<ApiResponse<CalendarEvent>>('/events', data),
+
+  updateEvent: (id: string, data: { date?: string; title?: string; description?: string; eventType?: string }) =>
+    api.put<ApiResponse<CalendarEvent>>(`/events/${id}`, data),
+
+  deleteEvent: (id: string) =>
+    api.delete<ApiResponse>(`/events/${id}`),
+};
+
+// ─── Analytics ───────────────────────────────
+export const analyticsApi = {
+  getMyPercentage: (month: number, year: number) =>
+    api.get<ApiResponse<MyPercentageResponse>>('/analytics/my-percentage', { params: { month, year } }),
 };

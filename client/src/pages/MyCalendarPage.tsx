@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { entryApi, holidayApi } from '../api';
+import { entryApi, holidayApi, eventApi, analyticsApi } from '../api';
 import { useAuth } from '../context/AuthContext';
-import type { Entry, Holiday, StatusType } from '../types';
+import type { Entry, Holiday, StatusType, CalendarEvent } from '../types';
 import {
   getCurrentMonth,
   offsetMonth,
@@ -62,15 +62,25 @@ const MyCalendarPage: React.FC = () => {
   const [showRepeatModal, setShowRepeatModal] = useState(false);
   const [showCopyRangeModal, setShowCopyRangeModal] = useState(false);
 
+  // ─── Office percentage banner ────────────────
+  const [officePercent, setOfficePercent] = useState<number | null>(null);
+  const [percentOfficeDays, setPercentOfficeDays] = useState(0);
+  const [percentWorkingDays, setPercentWorkingDays] = useState(0);
+
+  // ─── Events ──────────────────────────────────
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [eventDetail, setEventDetail] = useState<CalendarEvent | null>(null);
+
   const days = getDaysInMonth(month);
   const firstDayOfWeek = getDayOfWeek(days[0]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [entryRes, holidayRes] = await Promise.all([
+      const [entryRes, holidayRes, eventRes] = await Promise.all([
         entryApi.getMyEntries(days[0], days[days.length - 1]),
         holidayApi.getHolidays(days[0], days[days.length - 1]),
+        eventApi.getEvents(days[0], days[days.length - 1]),
       ]);
 
       const eMap: Record<string, DayData> = {};
@@ -89,6 +99,21 @@ const MyCalendarPage: React.FC = () => {
         hMap[h.date] = h.name;
       });
       setHolidays(hMap);
+
+      setEvents(eventRes.data.data || []);
+
+      // Fetch office percentage from backend
+      const [y, m] = month.split('-').map(Number);
+      try {
+        const pctRes = await analyticsApi.getMyPercentage(m, y);
+        if (pctRes.data.success && pctRes.data.data) {
+          setOfficePercent(pctRes.data.data.officePercent);
+          setPercentOfficeDays(pctRes.data.data.officeDays);
+          setPercentWorkingDays(pctRes.data.data.totalWorkingDays);
+        }
+      } catch {
+        setOfficePercent(null);
+      }
     } catch {
       toast.error('Failed to load calendar data');
     } finally {
@@ -263,6 +288,13 @@ const MyCalendarPage: React.FC = () => {
   const workingDays = workingDaySet.size;
   const wfhDays = workingDays - officeDays - leaveDays;
 
+  // Events lookup: date → events[]
+  const eventsMap: Record<string, CalendarEvent[]> = {};
+  events.forEach((ev) => {
+    if (!eventsMap[ev.date]) eventsMap[ev.date] = [];
+    eventsMap[ev.date].push(ev);
+  });
+
   const formatDateLong = (d: string) => {
     const [y, m, day] = d.split('-').map(Number);
     return new Date(y, m - 1, day).toLocaleDateString('en-US', {
@@ -302,6 +334,27 @@ const MyCalendarPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Office Percentage Banner */}
+      {officePercent !== null && (
+        <div className="mb-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-800 rounded-xl p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-14 h-14 rounded-full bg-blue-100 dark:bg-blue-800/50">
+              <span className="text-2xl font-bold text-blue-700 dark:text-blue-300">{officePercent}%</span>
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-blue-800 dark:text-blue-200">In-Office Presence This Month</div>
+              <div className="text-xs text-blue-600 dark:text-blue-400">{percentOfficeDays} of {percentWorkingDays} working days in office</div>
+            </div>
+          </div>
+          <div className="hidden sm:block w-32 h-2 bg-blue-200 dark:bg-blue-800 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-blue-600 dark:bg-blue-400 rounded-full transition-all duration-500"
+              style={{ width: `${officePercent}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-3 mb-4">
@@ -398,6 +451,11 @@ const MyCalendarPage: React.FC = () => {
                   const hasTime = dayData?.startTime && dayData?.endTime;
                   const hasNote = !!dayData?.note;
                   const isSelected = selectedDates.includes(date);
+                  const dateEvents = eventsMap[date] || [];
+                  const hasEvents = dateEvents.length > 0;
+                  const isMandatory = dateEvents.some(
+                    (e) => e.eventType === 'mandatory-office' || /mandatory/i.test(e.title)
+                  );
 
                   // Conflict indicators
                   const isLeaveOnHoliday = dayData?.status === 'leave' && holidays[date];
@@ -432,13 +490,14 @@ const MyCalendarPage: React.FC = () => {
                         ${!canEdit && !lockedReason && past && !isAdmin ? 'opacity-50' : ''}
                         ${weekend ? 'border-transparent' : ''}
                         ${isSelected ? 'ring-2 ring-indigo-400 ring-offset-1 shadow-md' : ''}
+                        ${isMandatory ? 'border-red-300 dark:border-red-700 bg-red-50/30 dark:bg-red-900/10' : ''}
                       `}
                       title={
                         lockedReason
                           ? `🔒 ${lockedReason}`
                           : holidays[date]
                           ? holidays[date]
-                          : `${info.label}${hasTime ? ` (${dayData.startTime}–${dayData.endTime})` : ''}${hasNote ? ` — ${dayData.note}` : ''}`
+                          : `${info.label}${hasTime ? ` (${dayData.startTime}–${dayData.endTime})` : ''}${hasNote ? ` — ${dayData.note}` : ''}${hasEvents ? `\n📌 ${dateEvents.map((e) => e.title).join(', ')}` : ''}`
                       }
                     >
                       <div
@@ -477,6 +536,17 @@ const MyCalendarPage: React.FC = () => {
                           {isSelected && (
                             <div className="absolute top-0.5 left-0.5 text-[10px] bg-indigo-500 text-white rounded-full w-4 h-4 flex items-center justify-center">
                               ✓
+                            </div>
+                          )}
+                          {hasEvents && (
+                            <div
+                              className="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex gap-0.5 cursor-pointer"
+                              onClick={(e) => { e.stopPropagation(); setEventDetail(dateEvents[0]); }}
+                            >
+                              <div className={`w-1.5 h-1.5 rounded-full ${isMandatory ? 'bg-red-500' : 'bg-amber-500'}`} title={dateEvents.map((ev) => ev.title).join(', ')} />
+                              {dateEvents.length > 1 && (
+                                <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                              )}
                             </div>
                           )}
                         </>
@@ -521,6 +591,46 @@ const MyCalendarPage: React.FC = () => {
           onDone={fetchData}
           onClose={() => setShowCopyRangeModal(false)}
         />
+      )}
+
+      {/* ─── Event Detail Modal ───────────────────── */}
+      {eventDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50" onClick={() => setEventDetail(null)}>
+          <div
+            className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4 p-6 transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xl">📌</span>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{eventDetail.title}</h2>
+            </div>
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+              {formatDateLong(eventDetail.date)}
+            </div>
+            {eventDetail.eventType && (
+              <div className="inline-block px-2 py-0.5 text-xs rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 mb-3">
+                {eventDetail.eventType}
+              </div>
+            )}
+            {eventDetail.description && (
+              <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">{eventDetail.description}</p>
+            )}
+            {eventDetail.createdBy && (
+              <p className="text-xs text-gray-500 dark:text-gray-500">
+                Created by {eventDetail.createdBy.name}
+              </p>
+            )}
+            <div className="flex justify-end mt-4">
+              <button
+                type="button"
+                onClick={() => setEventDetail(null)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ─── Day Detail Modal ──────────────────── */}

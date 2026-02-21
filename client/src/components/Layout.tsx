@@ -11,6 +11,7 @@ const PAGE_NAMES: Record<string, string> = {
   '/profile': 'Profile',
   '/admin/users': 'Admin Users',
   '/admin/holidays': 'Admin Holidays',
+  '/admin/events': 'Admin Events',
   '/admin/insights': 'Insights',
   '/admin/user-insights': 'User Insights',
 };
@@ -27,6 +28,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       ? [
           { to: '/admin/users', label: 'Users' },
           { to: '/admin/holidays', label: 'Holidays' },
+          { to: '/admin/events', label: 'Events' },
           { to: '/admin/insights', label: 'Insights' },
           { to: '/admin/user-insights', label: 'Employee' },
         ]

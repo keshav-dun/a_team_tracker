@@ -11,6 +11,8 @@ import insightsRoutes from './routes/insightsRoutes.js';
 import statusRoutes from './routes/statusRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import workbotRoutes from './routes/workbotRoutes.js';
+import eventRoutes from './routes/eventRoutes.js';
+import analyticsRoutes from './routes/analyticsRoutes.js';
 import { warmUpEmbeddings } from './utils/embeddings.js';
 
 const app = express();
@@ -29,6 +31,8 @@ app.use('/api/insights', insightsRoutes);
 app.use('/api/status', statusRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/workbot', workbotRoutes);
+app.use('/api/events', eventRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

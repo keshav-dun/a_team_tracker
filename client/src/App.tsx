@@ -7,6 +7,7 @@ import TeamCalendarPage from './pages/TeamCalendarPage';
 import MyCalendarPage from './pages/MyCalendarPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AdminHolidaysPage from './pages/AdminHolidaysPage';
+import AdminEventsPage from './pages/AdminEventsPage';
 import InsightsPage from './pages/InsightsPage';
 import UserInsightsPage from './pages/UserInsightsPage';
 import ProfilePage from './pages/ProfilePage';
@@ -42,6 +43,7 @@ function App() {
           <>
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/admin/holidays" element={<AdminHolidaysPage />} />
+            <Route path="/admin/events" element={<AdminEventsPage />} />
             <Route path="/admin/insights" element={<InsightsPage />} />
             <Route path="/admin/user-insights" element={<UserInsightsPage />} />
           </>

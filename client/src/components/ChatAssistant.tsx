@@ -38,9 +38,11 @@ type AssistantView = 'mode-select' | 'chatbot' | 'workbot';
 const MAX_CHARS = 1000;
 
 const SUGGESTED_QUESTIONS = [
+  'What is my office percentage this month?',
+  'Who is in office today?',
+  'Which day next week has the highest attendance?',
+  'Is there any event next Friday?',
   'How do I mark leave?',
-  "Why can't I edit last month?",
-  'How to export data?',
   'What does WFH mean?',
 ];
 
@@ -150,7 +152,7 @@ const ModeSelector: React.FC<{
       <button className="mode-option mode-option--chat" onClick={onSelectChat}>
         <span className="mode-option-emoji" aria-hidden="true">💬</span>
         <span className="mode-option-label">Ask a Question</span>
-        <span className="mode-option-desc">Get help about using the app</span>
+        <span className="mode-option-desc">Get help, check attendance, or ask about events</span>
       </button>
       <button className="mode-option mode-option--workbot" onClick={onSelectWorkbot}>
         <span className="mode-option-emoji" aria-hidden="true">⚙️</span>
@@ -381,7 +383,7 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ pageName }) => {
                 <p className="chat-header-subtitle">
                   {view === 'mode-select'
                     ? 'Choose what you need'
-                    : 'Ask anything about using the app'}
+                    : 'Ask about the app, your schedule, or team attendance'}
                 </p>
               </div>
             </div>
@@ -476,7 +478,7 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ pageName }) => {
                     value={input}
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
-                    placeholder="Ask a question about the app…"
+                    placeholder="Ask about the app, schedule, or team…"
                     rows={1}
                     maxLength={MAX_CHARS}
                     aria-label="Type your question"

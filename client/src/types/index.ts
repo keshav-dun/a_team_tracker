@@ -238,3 +238,30 @@ export interface WorkbotApplyResult {
   failed: number;
   results: BulkResultItem[];
 }
+
+// ─── Events (Admin Event Tagging) ────────────
+export interface CalendarEvent {
+  _id: string;
+  date: string;
+  title: string;
+  description?: string;
+  eventType?: string;
+  createdBy: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Analytics ───────────────────────────────
+export interface MyPercentageResponse {
+  month: number;
+  year: number;
+  totalWorkingDays: number;
+  officeDays: number;
+  leaveDays: number;
+  wfhDays: number;
+  officePercent: number;
+}
