@@ -82,11 +82,11 @@ async function generateAnswer(
       'X-Title': 'A-Team-Tracker Assistant',
     },
     body: JSON.stringify({
-      model: 'openai/gpt-oss-120b:free',
+      model: 'deepseek/deepseek-r1-0528:free',
       messages: [
-        { role: 'system', content: systemPrompt },
+        { role: 'user', content: systemPrompt },
       ],
-      max_tokens: 1024,
+      max_tokens: 2048,
       temperature: 0.2,
     }),
   });
