@@ -85,52 +85,43 @@ const TeamCalendarPage: React.FC = () => {
     });
   };
 
+  // Shared base: team filtered by search query only
+  const searchFilteredTeam = useMemo(() => {
+    if (!searchQuery.trim()) return team;
+    const q = searchQuery.toLowerCase().trim();
+    return team.filter(
+      (m) => m.user.name.toLowerCase().includes(q) || m.user.email.toLowerCase().includes(q)
+    );
+  }, [team, searchQuery]);
+
   const filteredTeam = useMemo(() => {
-    let result = team;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      result = result.filter(
-        (m) => m.user.name.toLowerCase().includes(q) || m.user.email.toLowerCase().includes(q)
-      );
+    if (statusFilter === 'all') return searchFilteredTeam;
+    if (filterDate) {
+      return searchFilteredTeam.filter((m) => {
+        const effective = getEffectiveStatusForFilter(m.entries, filterDate);
+        return effective === statusFilter;
+      });
     }
-    if (statusFilter !== 'all') {
-      if (filterDate) {
-        // Filter by status on the specific chosen date
-        result = result.filter((m) => {
-          const effective = getEffectiveStatusForFilter(m.entries, filterDate);
-          return effective === statusFilter;
-        });
-      } else {
-        // No date chosen — show members who have this status on ANY weekday in the month
-        result = result.filter((m) =>
-          days.some((d) => {
-            if (isWeekend(d) || holidays[d]) return false;
-            return getEffectiveStatusForFilter(m.entries, d) === statusFilter;
-          })
-        );
-      }
-    }
-    return result;
-  }, [team, searchQuery, statusFilter, filterDate, holidays, days]);
+    // No date chosen — show members who have this status on ANY weekday in the month
+    return searchFilteredTeam.filter((m) =>
+      days.some((d) => {
+        if (isWeekend(d) || holidays[d]) return false;
+        return getEffectiveStatusForFilter(m.entries, d) === statusFilter;
+      })
+    );
+  }, [searchFilteredTeam, statusFilter, filterDate, holidays, days]);
 
   // Compute per-status counts for the active filter context
   const statusCounts = useMemo(() => {
     const counts = { office: 0, leave: 0, wfh: 0 };
-    const base = searchQuery.trim()
-      ? team.filter((m) => {
-          const q = searchQuery.toLowerCase().trim();
-          return m.user.name.toLowerCase().includes(q) || m.user.email.toLowerCase().includes(q);
-        })
-      : team;
-
     if (filterDate) {
-      base.forEach((m) => {
+      searchFilteredTeam.forEach((m) => {
         const s = getEffectiveStatusForFilter(m.entries, filterDate);
         counts[s]++;
       });
     } else {
       // Show total unique members per status across the month
-      base.forEach((m) => {
+      searchFilteredTeam.forEach((m) => {
         const statuses = new Set<string>();
         days.forEach((d) => {
           if (!isWeekend(d) && !holidays[d]) statuses.add(getEffectiveStatusForFilter(m.entries, d));
@@ -141,7 +132,7 @@ const TeamCalendarPage: React.FC = () => {
       });
     }
     return counts;
-  }, [team, searchQuery, filterDate, holidays, days]);
+  }, [searchFilteredTeam, filterDate, holidays, days]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
