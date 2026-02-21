@@ -1,19 +1,38 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Entry from '../models/Entry.js';
 import { AuthRequest } from '../types/index.js';
 
 /**
- * Get all users (admin only).
- * GET /api/admin/users
+ * Get all users (admin only) with pagination.
+ * GET /api/admin/users?page=1&limit=20
  */
 export const getAllUsers = async (
-  _req: AuthRequest,
+  req: AuthRequest,
   res: Response
 ): Promise<void> => {
   try {
-    const users = await User.find().sort({ name: 1 });
-    res.json({ success: true, data: users });
+    const MAX_LIMIT = 100;
+    const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+    const limit = Math.min(MAX_LIMIT, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
+    const skip = (page - 1) * limit;
+
+    const [users, total] = await Promise.all([
+      User.find().sort({ name: 1 }).skip(skip).limit(limit),
+      User.countDocuments(),
+    ]);
+
+    res.json({
+      success: true,
+      data: users,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -120,11 +139,13 @@ export const deleteUser = async (
   req: AuthRequest,
   res: Response
 ): Promise<void> => {
+  const session = await mongoose.startSession();
   try {
     const { id } = req.params;
 
     // Prevent admin from deleting themselves
     if (req.user!._id.toString() === id) {
+      await session.endSession();
       res.status(400).json({
         success: false,
         message: 'Cannot delete your own account',
@@ -132,17 +153,26 @@ export const deleteUser = async (
       return;
     }
 
-    const user = await User.findByIdAndDelete(id);
+    await session.startTransaction();
+
+    const user = await User.findByIdAndDelete(id, { session });
     if (!user) {
+      await session.abortTransaction();
+      await session.endSession();
       res.status(404).json({ success: false, message: 'User not found' });
       return;
     }
 
     // Remove all entries for this user
-    await Entry.deleteMany({ userId: id });
+    await Entry.deleteMany({ userId: id }, { session });
+
+    await session.commitTransaction();
+    await session.endSession();
 
     res.json({ success: true, message: 'User and their entries deleted' });
   } catch (error: any) {
+    await session.abortTransaction();
+    await session.endSession();
     res.status(400).json({ success: false, message: error.message });
   }
 };

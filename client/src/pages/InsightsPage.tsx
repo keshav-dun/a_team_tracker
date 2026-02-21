@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { insightsApi } from '../api';
 import type { InsightsResponse, EmployeeInsight } from '../types';
@@ -33,7 +33,7 @@ const InsightsPage: React.FC = () => {
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
   /* fetch */
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await insightsApi.getInsights(month, year);
@@ -47,9 +47,9 @@ const InsightsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [month, year]);
 
-  useEffect(() => { load(); }, [month, year]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [load]);
 
   /* sorting */
   const sorted = useMemo(() => {
@@ -92,6 +92,7 @@ const InsightsPage: React.FC = () => {
 
   /* ─── mini bar chart (pure CSS) ─────────────── */
   const maxTrend = data ? Math.max(...data.dailyOfficeTrend.map((d) => d.count), 1) : 1;
+  const maxDist = data ? Math.max(...data.team.officeDayDistribution.map((x) => x.count), 1) : 1;
 
   return (
     <div className="space-y-6">
@@ -182,7 +183,6 @@ const InsightsPage: React.FC = () => {
             <h2 className="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100">Office Day Distribution (by weekday)</h2>
             <div className="flex items-end gap-3 h-40">
               {data.team.officeDayDistribution.map((d) => {
-                const maxDist = Math.max(...data.team.officeDayDistribution.map((x) => x.count), 1);
                 const pct = (d.count / maxDist) * 100;
                 return (
                   <div key={d.day} className="flex-1 flex flex-col items-center gap-1">
