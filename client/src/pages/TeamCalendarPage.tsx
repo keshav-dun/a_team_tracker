@@ -298,6 +298,10 @@ const TeamCalendarPage: React.FC = () => {
         opts.leaveDuration = 'half';
         opts.halfDayPortion = halfDayPortion;
         opts.workingPortion = workingPortion;
+      } else if (status === 'leave') {
+        opts.leaveDuration = 'full';
+        opts.halfDayPortion = undefined;
+        opts.workingPortion = undefined;
       }
 
       if (status === 'wfh') {
@@ -723,6 +727,9 @@ const TeamCalendarPage: React.FC = () => {
                                             note: tpl.note || '',
                                             startTime: tpl.startTime || '',
                                             endTime: tpl.endTime || '',
+                                            leaveDuration: (tpl.leaveDuration as LeaveDuration) || 'full',
+                                            halfDayPortion: (tpl.halfDayPortion as HalfDayPortion) || 'first-half',
+                                            workingPortion: (tpl.workingPortion as WorkingPortion) || 'wfh',
                                           } : prev);
                                         }
                                       }}

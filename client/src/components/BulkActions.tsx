@@ -586,7 +586,7 @@ export const TemplatesPanel: React.FC<{
       } else {
         toast.error('Unexpected response from server');
       }
-      setNewName(''); setNewStartTime(''); setNewEndTime(''); setNewNote(''); setNewLeaveDuration('full');
+      setNewName(''); setNewStartTime(''); setNewEndTime(''); setNewNote(''); setNewLeaveDuration('full'); setNewHalfDayPortion('first-half'); setNewWorkingPortion('wfh');
       toast.success('Template created');
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Failed to create template');

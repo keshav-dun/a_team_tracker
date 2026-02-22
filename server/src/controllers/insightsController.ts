@@ -55,9 +55,9 @@ export const getInsights = async (
         startTime: e.startTime,
         endTime: e.endTime,
         note: e.note,
-        leaveDuration: (e as any).leaveDuration,
-        halfDayPortion: (e as any).halfDayPortion,
-        workingPortion: (e as any).workingPortion,
+        leaveDuration: e.leaveDuration,
+        halfDayPortion: e.halfDayPortion,
+        workingPortion: e.workingPortion,
       };
     });
 
@@ -257,9 +257,9 @@ export const getUserInsights = async (
         startTime: e.startTime,
         endTime: e.endTime,
         note: e.note,
-        leaveDuration: (e as any).leaveDuration,
-        halfDayPortion: (e as any).halfDayPortion,
-        workingPortion: (e as any).workingPortion,
+        leaveDuration: e.leaveDuration,
+        halfDayPortion: e.halfDayPortion,
+        workingPortion: e.workingPortion,
       };
     });
 
@@ -433,8 +433,8 @@ export const exportInsightsCsv = async (
       if (!entryMap[uid]) entryMap[uid] = {};
       entryMap[uid][e.date] = {
         status: e.status,
-        leaveDuration: (e as any).leaveDuration,
-        workingPortion: (e as any).workingPortion,
+        leaveDuration: e.leaveDuration,
+        workingPortion: e.workingPortion,
       };
     });
 

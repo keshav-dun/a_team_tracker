@@ -49,12 +49,12 @@ function withHalfDayRefinements<
 >(schema: T) {
   return schema
     .refine(
-      (d) => !(d.leaveDuration === 'half' && !d.halfDayPortion),
-      { message: 'halfDayPortion is required when leaveDuration is half', path: ['halfDayPortion'] },
+      (d) => !(d.leaveDuration && d.status !== 'leave'),
+      { message: 'leaveDuration is only allowed when status is leave', path: ['leaveDuration'] },
     )
     .refine(
-      (d) => !(d.leaveDuration === 'half' && d.status !== 'leave'),
-      { message: 'leaveDuration=half is only valid when status is leave', path: ['leaveDuration'] },
+      (d) => !(d.leaveDuration === 'half' && !d.halfDayPortion),
+      { message: 'halfDayPortion is required when leaveDuration is half', path: ['halfDayPortion'] },
     )
     .refine(
       (d) => !(d.workingPortion && d.leaveDuration !== 'half'),

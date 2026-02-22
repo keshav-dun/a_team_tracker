@@ -123,6 +123,12 @@ const UserInsightsPage: React.FC = () => {
       .sort((a, b) => b.count - a.count);
   }, [data]);
 
+  /* Half-day leave count derived from daily breakdown */
+  const halfDayLeaveCount = useMemo(() => {
+    if (!data) return 0;
+    return data.dailyBreakdown.filter((d) => d.status === 'half-day-leave').length;
+  }, [data]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -246,7 +252,7 @@ const UserInsightsPage: React.FC = () => {
               value={`${data.summary.wfhPercent}%`}
               icon="🏠"
             />
-            <Card label="Partial Days" value={data.summary.partialDays} icon="⏱️" />
+            <Card label="Half-Day Leaves" value={halfDayLeaveCount} icon="🌗" />
           </div>
 
           {/* Status Distribution mini-chart */}
@@ -338,7 +344,8 @@ const UserInsightsPage: React.FC = () => {
                             {cfg.emoji} <span className="hidden sm:inline">{cfg.label}</span>
                             {day.status === 'half-day-leave' && day.halfDayPortion && (
                               <span className="text-[10px] opacity-75 ml-1 hidden sm:inline">
-                                ({day.halfDayPortion === 'first-half' ? 'AM' : 'PM'} leave, {day.workingPortion === 'office' ? '🏢 Office' : '🏠 WFH'} other half)
+                                ({day.halfDayPortion === 'first-half' ? 'AM' : 'PM'} leave,{' '}
+                                {day.workingPortion === 'office' ? '🏢 Office' : day.workingPortion === 'wfh' ? '🏠 WFH' : '🏠 WFH'} other half)
                               </span>
                             )}
                             {day.holidayName && (

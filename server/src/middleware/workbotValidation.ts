@@ -38,6 +38,53 @@ const applyItemSchema = z.object({
   halfDayPortion: z.enum(['first-half', 'second-half']).optional(),
   workingPortion: z.enum(['wfh', 'office']).optional(),
   note: z.string().max(MAX_NOTE_LENGTH).optional(),
+}).superRefine((data, ctx) => {
+  if (data.status === 'leave') {
+    if (data.leaveDuration === 'half' && !data.halfDayPortion) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['halfDayPortion'],
+        message: 'halfDayPortion is required when leaveDuration is "half"',
+      });
+    }
+    if (data.leaveDuration !== 'half' && data.halfDayPortion) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['halfDayPortion'],
+        message: 'halfDayPortion is only allowed when leaveDuration is "half"',
+      });
+    }
+    if (data.leaveDuration !== 'half' && data.workingPortion) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['workingPortion'],
+        message: 'workingPortion is only allowed when leaveDuration is "half"',
+      });
+    }
+  } else {
+    // status is 'office' or 'clear' — no leave fields allowed
+    if (data.leaveDuration) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['leaveDuration'],
+        message: 'leaveDuration is only allowed when status is "leave"',
+      });
+    }
+    if (data.halfDayPortion) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['halfDayPortion'],
+        message: 'halfDayPortion is only allowed when status is "leave"',
+      });
+    }
+    if (data.workingPortion) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['workingPortion'],
+        message: 'workingPortion is only allowed when status is "leave"',
+      });
+    }
+  }
 });
 
 const applySchema = z.object({

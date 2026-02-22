@@ -62,6 +62,11 @@ export const createTemplate = async (
       return;
     }
 
+    // Enum validation
+    if (leaveDuration !== undefined && !['half', 'full'].includes(leaveDuration)) {
+      res.status(400).json({ success: false, message: 'leaveDuration must be "half" or "full"' });
+      return;
+    }
     // Half-day leave validation
     if (leaveDuration === 'half' && status !== 'leave') {
       res.status(400).json({ success: false, message: 'Half-day duration is only valid for leave status' });
@@ -69,6 +74,14 @@ export const createTemplate = async (
     }
     if (leaveDuration === 'half' && !halfDayPortion) {
       res.status(400).json({ success: false, message: 'halfDayPortion is required when leaveDuration is half' });
+      return;
+    }
+    if (halfDayPortion !== undefined && !['morning', 'afternoon'].includes(halfDayPortion)) {
+      res.status(400).json({ success: false, message: 'halfDayPortion must be "morning" or "afternoon"' });
+      return;
+    }
+    if (workingPortion !== undefined && !['wfh', 'office'].includes(workingPortion)) {
+      res.status(400).json({ success: false, message: 'workingPortion must be "wfh" or "office"' });
       return;
     }
 
@@ -148,17 +161,28 @@ export const updateTemplate = async (
     }
     if (effectiveStart && effectiveEnd && effectiveEnd <= effectiveStart) { res.status(400).json({ success: false, message: 'endTime must be after startTime' }); return; }
 
+    // Enum validation
+    if (leaveDuration !== undefined && !['half', 'full'].includes(leaveDuration)) {
+      res.status(400).json({ success: false, message: 'leaveDuration must be "half" or "full"' }); return;
+    }
+    if (halfDayPortion !== undefined && !['morning', 'afternoon'].includes(halfDayPortion)) {
+      res.status(400).json({ success: false, message: 'halfDayPortion must be "morning" or "afternoon"' }); return;
+    }
+    if (workingPortion !== undefined && !['wfh', 'office'].includes(workingPortion)) {
+      res.status(400).json({ success: false, message: 'workingPortion must be "wfh" or "office"' }); return;
+    }
+
     // Handle half-day leave fields
     const effectiveStatus = update.status ?? existing.status;
     if (effectiveStatus === 'leave' && leaveDuration === 'half') {
-      const effectivePortion = halfDayPortion ?? (existing as any).halfDayPortion;
+      const effectivePortion = halfDayPortion ?? existing.halfDayPortion;
       if (!effectivePortion) {
         res.status(400).json({ success: false, message: 'halfDayPortion is required when leaveDuration is half' }); return;
       }
       update.leaveDuration = 'half';
       update.halfDayPortion = effectivePortion;
-      update.workingPortion = workingPortion ?? (existing as any).workingPortion ?? 'wfh';
-    } else if (effectiveStatus === 'office' || leaveDuration === 'full' || (effectiveStatus === 'leave' && !leaveDuration && !(existing as any).leaveDuration)) {
+      update.workingPortion = workingPortion ?? existing.workingPortion ?? 'wfh';
+    } else if (effectiveStatus === 'office' || leaveDuration === 'full' || (effectiveStatus === 'leave' && !leaveDuration && !existing.leaveDuration)) {
       // Clear half-day fields when switching to office or full-day leave
       unsetFields.leaveDuration = 1;
       unsetFields.halfDayPortion = 1;

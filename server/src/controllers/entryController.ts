@@ -479,28 +479,8 @@ export const bulkSetEntries = async (
           startTime: startTime || undefined,
           endTime: endTime || undefined,
         };
-        const unsetFields: Record<string, 1> = {};
-        if (!startTime) {
-          unsetFields.startTime = 1;
-          unsetFields.endTime = 1;
-          delete updateData.startTime;
-          delete updateData.endTime;
-        }
-        if (!note) {
-          unsetFields.note = 1;
-          delete updateData.note;
-        }
-        if (status !== 'leave' || leaveDuration !== 'half') {
-          unsetFields.leaveDuration = 1;
-          unsetFields.halfDayPortion = 1;
-          unsetFields.workingPortion = 1;
-          delete updateData.leaveDuration;
-          delete updateData.halfDayPortion;
-          delete updateData.workingPortion;
-        }
 
-        const update: Record<string, unknown> = { $set: updateData };
-        if (Object.keys(unsetFields).length) update.$unset = unsetFields;
+        const update = buildUpdateOp(updateData, startTime, note, leaveDuration, halfDayPortion, workingPortion);
 
         return {
           updateOne: {
@@ -602,16 +582,15 @@ export const copyFromDate = async (
             halfDayPortion: sourceEntry.halfDayPortion || undefined,
             workingPortion: sourceEntry.workingPortion || undefined,
           };
-          const unsetFields: Record<string, 1> = {};
-          if (!sourceEntry.startTime) { unsetFields.startTime = 1; unsetFields.endTime = 1; }
-          if (!sourceEntry.note) { unsetFields.note = 1; }
-          if (!sourceEntry.leaveDuration || sourceEntry.leaveDuration !== 'half') {
-            unsetFields.leaveDuration = 1; unsetFields.halfDayPortion = 1; unsetFields.workingPortion = 1;
-            delete updateData.leaveDuration; delete updateData.halfDayPortion; delete updateData.workingPortion;
-          }
 
-          const updateOp: Record<string, unknown> = { $set: updateData };
-          if (Object.keys(unsetFields).length) updateOp.$unset = unsetFields;
+          const updateOp = buildUpdateOp(
+            updateData,
+            sourceEntry.startTime,
+            sourceEntry.note,
+            sourceEntry.leaveDuration,
+            sourceEntry.halfDayPortion,
+            sourceEntry.workingPortion,
+          );
 
           await Entry.findOneAndUpdate(
             { userId, date },
@@ -725,16 +704,8 @@ export const repeatPattern = async (
             startTime: startTime || undefined,
             endTime: endTime || undefined,
           };
-          const unsetFields: Record<string, 1> = {};
-          if (!startTime) { unsetFields.startTime = 1; unsetFields.endTime = 1; }
-          if (!note) { unsetFields.note = 1; }
-          if (status !== 'leave' || leaveDuration !== 'half') {
-            unsetFields.leaveDuration = 1; unsetFields.halfDayPortion = 1; unsetFields.workingPortion = 1;
-            delete updateData.leaveDuration; delete updateData.halfDayPortion; delete updateData.workingPortion;
-          }
 
-          const updateOp: Record<string, unknown> = { $set: updateData };
-          if (Object.keys(unsetFields).length) updateOp.$unset = unsetFields;
+          const updateOp = buildUpdateOp(updateData, startTime, note, leaveDuration, halfDayPortion, workingPortion);
 
           await Entry.findOneAndUpdate(
             { userId, date },
@@ -848,16 +819,15 @@ export const copyRange = async (
             halfDayPortion: sourceEntry.halfDayPortion || undefined,
             workingPortion: sourceEntry.workingPortion || undefined,
           };
-          const unsetFields: Record<string, 1> = {};
-          if (!sourceEntry.startTime) { unsetFields.startTime = 1; unsetFields.endTime = 1; }
-          if (!sourceEntry.note) { unsetFields.note = 1; }
-          if (!sourceEntry.leaveDuration || sourceEntry.leaveDuration !== 'half') {
-            unsetFields.leaveDuration = 1; unsetFields.halfDayPortion = 1; unsetFields.workingPortion = 1;
-            delete updateData.leaveDuration; delete updateData.halfDayPortion; delete updateData.workingPortion;
-          }
 
-          const updateOp: Record<string, unknown> = { $set: updateData };
-          if (Object.keys(unsetFields).length) updateOp.$unset = unsetFields;
+          const updateOp = buildUpdateOp(
+            updateData,
+            sourceEntry.startTime,
+            sourceEntry.note,
+            sourceEntry.leaveDuration,
+            sourceEntry.halfDayPortion,
+            sourceEntry.workingPortion,
+          );
 
           await Entry.findOneAndUpdate(
             { userId, date: tgtDateStr },
@@ -938,7 +908,7 @@ export const getTeamSummary = async (
           summary[e.date].leave++;
           summary[e.date].wfh--;
           if (e.workingPortion === 'office') {
-            // counts toward both leave and office partially (tracked via halfDayLeave)
+            summary[e.date].office++;
           }
         } else {
           summary[e.date].leave++;

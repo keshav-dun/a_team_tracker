@@ -254,6 +254,11 @@ const MyCalendarPage: React.FC = () => {
           opts.leaveDuration = 'half';
           opts.halfDayPortion = modalHalfDayPortion;
           opts.workingPortion = modalWorkingPortion;
+        } else if (modalStatus === 'leave') {
+          // Full-day leave: explicitly clear any previous half-day fields
+          opts.leaveDuration = 'full';
+          opts.halfDayPortion = undefined;
+          opts.workingPortion = undefined;
         }
         await entryApi.upsertEntry(editDate, modalStatus, opts);
         setEntries((prev) => ({
@@ -783,6 +788,7 @@ const MyCalendarPage: React.FC = () => {
                   <div className="flex gap-2">
                     <button
                       type="button"
+                      aria-pressed={modalLeaveDuration === 'full'}
                       onClick={() => setModalLeaveDuration('full')}
                       className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${
                         modalLeaveDuration === 'full'
@@ -794,6 +800,7 @@ const MyCalendarPage: React.FC = () => {
                     </button>
                     <button
                       type="button"
+                      aria-pressed={modalLeaveDuration === 'half'}
                       onClick={() => setModalLeaveDuration('half')}
                       className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${
                         modalLeaveDuration === 'half'
@@ -813,6 +820,7 @@ const MyCalendarPage: React.FC = () => {
                       <div className="flex gap-2">
                         <button
                           type="button"
+                          aria-pressed={modalHalfDayPortion === 'first-half'}
                           onClick={() => setModalHalfDayPortion('first-half')}
                           className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${
                             modalHalfDayPortion === 'first-half'
@@ -824,6 +832,7 @@ const MyCalendarPage: React.FC = () => {
                         </button>
                         <button
                           type="button"
+                          aria-pressed={modalHalfDayPortion === 'second-half'}
                           onClick={() => setModalHalfDayPortion('second-half')}
                           className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${
                             modalHalfDayPortion === 'second-half'
@@ -841,6 +850,7 @@ const MyCalendarPage: React.FC = () => {
                       <div className="flex gap-2">
                         <button
                           type="button"
+                          aria-pressed={modalWorkingPortion === 'wfh'}
                           onClick={() => setModalWorkingPortion('wfh')}
                           className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${
                             modalWorkingPortion === 'wfh'
@@ -852,6 +862,7 @@ const MyCalendarPage: React.FC = () => {
                         </button>
                         <button
                           type="button"
+                          aria-pressed={modalWorkingPortion === 'office'}
                           onClick={() => setModalWorkingPortion('office')}
                           className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${
                             modalWorkingPortion === 'office'

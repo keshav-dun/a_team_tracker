@@ -140,8 +140,8 @@ const Workbot: React.FC<WorkbotProps> = ({ onBack }) => {
         note: c.note,
         ...(c.status === 'leave' && c.leaveDuration === 'half' ? {
           leaveDuration: c.leaveDuration,
-          halfDayPortion: c.halfDayPortion,
-          workingPortion: c.workingPortion,
+          ...(c.halfDayPortion ? { halfDayPortion: c.halfDayPortion } : {}),
+          ...(c.workingPortion ? { workingPortion: c.workingPortion } : { workingPortion: 'wfh' as const }),
         } : {}),
       }));
       const res = await workbotApi.apply(items);
