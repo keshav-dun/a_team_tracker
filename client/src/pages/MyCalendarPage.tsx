@@ -60,6 +60,7 @@ const MyCalendarPage: React.FC = () => {
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<string | null>(null);
+  const mouseIsDown = useRef(false);
   const calendarRef = useRef<HTMLDivElement>(null);
   const calendarAreaRef = useRef<HTMLDivElement>(null);
 
@@ -144,22 +145,33 @@ const MyCalendarPage: React.FC = () => {
 
   const handleMouseDown = (date: string) => {
     if (!isSelectable(date)) return;
-    setIsDragging(true);
+    mouseIsDown.current = true;
     setDragStart(date);
     setSelectedDates([date]);
+    // Don't set isDragging yet — only transition to drag on mouse-enter of a different cell
   };
 
   const handleMouseEnter = (date: string) => {
-    if (!isDragging || !dragStart || !isSelectable(date)) return;
-    setSelectedDates(getDatesInRange(dragStart, date));
+    if (!mouseIsDown.current || !dragStart || !isSelectable(date)) return;
+    // Only start dragging when the cursor actually moves to a different cell
+    if (date !== dragStart) {
+      setIsDragging(true);
+    }
+    if (isDragging || date !== dragStart) {
+      setSelectedDates(getDatesInRange(dragStart, date));
+    }
   };
 
   const handleMouseUp = () => {
+    mouseIsDown.current = false;
     setIsDragging(false);
   };
 
   useEffect(() => {
-    const handler = () => { setIsDragging(false); };
+    const handler = () => {
+      mouseIsDown.current = false;
+      setIsDragging(false);
+    };
     window.addEventListener('mouseup', handler);
     return () => window.removeEventListener('mouseup', handler);
   }, []);
