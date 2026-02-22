@@ -218,3 +218,26 @@ export const myInsightsApi = {
   getMonthly: (month: string) =>
     api.get<ApiResponse<MyInsightsResponse>>('/my-insights/monthly', { params: { month } }),
 };
+
+// ─── Push Notifications ──────────────────────
+export const pushApi = {
+  subscribe: (endpoint: string, keys: { p256dh: string; auth: string }, preferences?: Record<string, boolean>) =>
+    api.post<ApiResponse>('/push/subscribe', { endpoint, keys, preferences }),
+
+  unsubscribe: (endpoint: string) =>
+    api.delete<ApiResponse>('/push/subscribe', { data: { endpoint } }),
+
+  getStatus: () =>
+    api.get<ApiResponse<{
+      subscribed: boolean;
+      subscriptionCount: number;
+      preferences: {
+        teamStatusChanges: boolean;
+        weeklyReminder: boolean;
+        adminAnnouncements: boolean;
+      };
+    }>>('/push/status'),
+
+  updatePreferences: (preferences: Record<string, boolean>) =>
+    api.put<ApiResponse>('/push/preferences', { preferences }),
+};
