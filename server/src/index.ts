@@ -15,6 +15,9 @@ import eventRoutes from './routes/eventRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import myInsightsRoutes from './routes/myInsightsRoutes.js';
 import pushRoutes from './routes/pushRoutes.js';
+import userRoutes from './routes/userRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
+import scheduleRoutes from './routes/scheduleRoutes.js';
 import { warmUpEmbeddings } from './utils/embeddings.js';
 
 const app = express();
@@ -37,6 +40,9 @@ app.use('/api/events', eventRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/my-insights', myInsightsRoutes);
 app.use('/api/push', pushRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/schedule', scheduleRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

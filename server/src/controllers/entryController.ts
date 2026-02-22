@@ -12,6 +12,7 @@ import {
 } from '../utils/date.js';
 import { sanitizeText } from '../utils/sanitize.js';
 import { notifyTeamStatusChange } from '../utils/pushNotifications.js';
+import { createFavoriteNotifications } from './notificationController.js';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -167,6 +168,15 @@ export const upsertEntry = async (
       );
     } catch (pushErr) {
       console.error('notifyTeamStatusChange error:', pushErr);
+    }
+
+    // Create favorite notifications for office days
+    if (status === 'office') {
+      try {
+        createFavoriteNotifications(userId.toString(), req.user!.name, [date]);
+      } catch (favErr) {
+        console.error('createFavoriteNotifications error:', favErr);
+      }
     }
 
     res.json({ success: true, data: entry });
@@ -530,6 +540,18 @@ export const bulkSetEntries = async (
     // Report skipped dates
     const skipped = dates.filter((d: string) => !allowedDates.includes(d));
     skipped.forEach((d: string) => results.push({ date: d, success: false, message: 'Outside allowed range' }));
+
+    // Create favorite notifications for bulk office days
+    if (status === 'office') {
+      const successDates = results.filter((r) => r.success).map((r) => r.date);
+      if (successDates.length > 0) {
+        try {
+          createFavoriteNotifications(userId.toString(), req.user!.name, successDates);
+        } catch (favErr) {
+          console.error('createFavoriteNotifications error:', favErr);
+        }
+      }
+    }
 
     res.json({
       success: true,

@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import ThemeToggle from './ThemeToggle';
 import NotificationBell from './NotificationBell';
+import FavoritesNotificationPanel from './FavoritesNotificationPanel';
 
 const ChatAssistant = lazy(() => import('./ChatAssistant'));
 
@@ -128,6 +129,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
             {/* Right: User controls */}
             <div className="flex items-center gap-2 sm:gap-3">
+              <FavoritesNotificationPanel />
               <NotificationBell />
               <ThemeToggle />
               <Link

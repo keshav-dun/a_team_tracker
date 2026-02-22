@@ -8,6 +8,7 @@ export interface IUser extends Document {
   password: string;
   role: 'member' | 'admin';
   isActive: boolean;
+  favorites: mongoose.Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -44,6 +45,10 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: true,
     },
+    favorites: [{
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    }],
   },
   {
     timestamps: true,

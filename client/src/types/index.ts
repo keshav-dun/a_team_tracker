@@ -4,6 +4,7 @@ export interface User {
   email: string;
   role: 'member' | 'admin';
   isActive: boolean;
+  favorites?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -315,4 +316,52 @@ export interface MyInsightsResponse {
   personal: MyInsightsPersonal;
   teamSnapshot: MyInsightsTeamSnapshot;
   highlights: MyInsightsHighlights;
+}
+
+// ─── Favorites & Notifications ───────────────
+export interface FavoriteUser {
+  _id: string;
+  name: string;
+  email: string;
+}
+
+export interface FavoriteNotification {
+  _id: string;
+  userId: string;
+  type: 'favorite_schedule_update';
+  sourceUserId: FavoriteUser;
+  affectedDates: string[];
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MatchDateClassification =
+  | 'will_be_added'
+  | 'conflict_leave'
+  | 'locked'
+  | 'already_matching'
+  | 'holiday'
+  | 'weekend';
+
+export interface MatchPreviewDate {
+  date: string;
+  classification: MatchDateClassification;
+  favoriteStatus: string;
+  userStatus: string;
+  canOverride: boolean;
+  reason?: string;
+}
+
+export interface MatchPreviewResponse {
+  favoriteUser: FavoriteUser;
+  preview: MatchPreviewDate[];
+  lastUpdated: string | null;
+}
+
+export interface MatchApplyResult {
+  processed: number;
+  skipped: number;
+  results: BulkResultItem[];
 }
