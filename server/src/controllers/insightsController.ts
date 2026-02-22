@@ -1,9 +1,10 @@
-import { Response } from 'express';
+import { Response, NextFunction } from 'express';
 import User from '../models/User.js';
 import Entry from '../models/Entry.js';
 import Holiday from '../models/Holiday.js';
 import { AuthRequest } from '../types/index.js';
 import { toISTDateString } from '../utils/date.js';
+import { Errors } from '../utils/AppError.js';
 
 /**
  * Get insights / analytics for a given month.
@@ -12,7 +13,8 @@ import { toISTDateString } from '../utils/date.js';
  */
 export const getInsights = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { month, year } = res.locals.validatedQuery as { month: number; year: number };
@@ -208,9 +210,8 @@ export const getInsights = async (
         dailyOfficeTrend: dailyOfficeCount,
       },
     });
-  } catch (error: any) {
-    console.error('getInsights error:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -221,7 +222,8 @@ export const getInsights = async (
  */
 export const getUserInsights = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { userId } = req.params;
@@ -230,8 +232,7 @@ export const getUserInsights = async (
     // Validate user exists
     const user = await User.findById(userId).select('name email role isActive createdAt');
     if (!user) {
-      res.status(404).json({ success: false, message: 'User not found' });
-      return;
+      throw Errors.notFound('User not found.');
     }
 
     const mm = String(month).padStart(2, '0');
@@ -385,9 +386,8 @@ export const getUserInsights = async (
         dailyBreakdown,
       },
     });
-  } catch (error: any) {
-    console.error('getUserInsights error:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -398,7 +398,8 @@ export const getUserInsights = async (
  */
 export const exportInsightsCsv = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { month, year } = res.locals.validatedQuery as { month: number; year: number };
@@ -489,8 +490,7 @@ export const exportInsightsCsv = async (
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csvContent);
-  } catch (error: any) {
-    console.error('exportInsightsCsv error:', error);
-    res.status(500).json({ success: false, message: 'Failed to export CSV' });
+  } catch (error) {
+    next(error);
   }
 };

@@ -1,8 +1,9 @@
-import { Response } from 'express';
+import { Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
 import { AuthRequest } from '../types/index.js';
+import { Errors } from '../utils/AppError.js';
 
 /**
  * Get notifications for the current user (newest first, max 50).
@@ -10,7 +11,8 @@ import { AuthRequest } from '../types/index.js';
  */
 export const getNotifications = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const userId = req.user!._id;
@@ -22,9 +24,8 @@ export const getNotifications = async (
       .lean();
 
     res.json({ success: true, data: notifications });
-  } catch (error: any) {
-    console.error('getNotifications error:', error);
-    res.status(500).json({ success: false, message: 'Failed to get notifications' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -34,15 +35,15 @@ export const getNotifications = async (
  */
 export const getUnreadCount = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const userId = req.user!._id;
     const count = await Notification.countDocuments({ userId, isRead: false });
     res.json({ success: true, data: { count } });
-  } catch (error: any) {
-    console.error('getUnreadCount error:', error);
-    res.status(500).json({ success: false, message: 'Failed to get unread count' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -52,15 +53,15 @@ export const getUnreadCount = async (
  */
 export const markAsRead = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { id } = req.params;
     const userId = req.user!._id;
 
     if (!mongoose.isValidObjectId(id)) {
-      res.status(400).json({ success: false, message: 'Invalid notification ID' });
-      return;
+      throw Errors.validation('Invalid notification ID.');
     }
 
     const notification = await Notification.findOneAndUpdate(
@@ -70,14 +71,12 @@ export const markAsRead = async (
     );
 
     if (!notification) {
-      res.status(404).json({ success: false, message: 'Notification not found' });
-      return;
+      throw Errors.notFound('Notification not found.');
     }
 
     res.json({ success: true, data: notification });
-  } catch (error: any) {
-    console.error('markAsRead error:', error);
-    res.status(500).json({ success: false, message: 'Failed to mark as read' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -87,15 +86,15 @@ export const markAsRead = async (
  */
 export const markAllAsRead = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const userId = req.user!._id;
     await Notification.updateMany({ userId, isRead: false }, { isRead: true });
-    res.json({ success: true, message: 'All notifications marked as read' });
-  } catch (error: any) {
-    console.error('markAllAsRead error:', error);
-    res.status(500).json({ success: false, message: 'Failed to mark all as read' });
+    res.json({ success: true, message: 'All notifications marked as read.' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -115,6 +114,11 @@ export const createFavoriteNotifications = async (
     const BATCH_SIZE = 500;
     const dateCount = officeDates.length;
     const message = `${sourceName} added ${dateCount} office day${dateCount > 1 ? 's' : ''}. Want to align?`;
+
+    if (!mongoose.isValidObjectId(sourceUserId)) {
+      console.warn('createFavoriteNotifications: invalid sourceUserId, skipping', sourceUserId);
+      return;
+    }
     const sourceObjId = new mongoose.Types.ObjectId(sourceUserId);
 
     // Stream fans via cursor to avoid loading all into memory at once

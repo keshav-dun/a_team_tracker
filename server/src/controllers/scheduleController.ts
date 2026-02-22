@@ -1,10 +1,11 @@
-import { Response } from 'express';
+import { Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import Entry from '../models/Entry.js';
 import Holiday from '../models/Holiday.js';
 import User from '../models/User.js';
 import { AuthRequest } from '../types/index.js';
 import { isMemberAllowedDate } from '../utils/date.js';
+import { Errors } from '../utils/AppError.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -64,7 +65,8 @@ export interface MatchPreviewDate {
  */
 export const matchPreview = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { favoriteUserId, startDate, endDate } = req.body;
@@ -73,23 +75,19 @@ export const matchPreview = async (
 
     // Validate inputs
     if (!favoriteUserId || !mongoose.isValidObjectId(favoriteUserId)) {
-      res.status(400).json({ success: false, message: 'Valid favoriteUserId is required' });
-      return;
+      throw Errors.validation('Valid favoriteUserId is required.');
     }
     if (!startDate || !isValidDate(startDate) || !endDate || !isValidDate(endDate)) {
-      res.status(400).json({ success: false, message: 'Valid startDate and endDate required (YYYY-MM-DD)' });
-      return;
+      throw Errors.validation('Valid startDate and endDate required (YYYY-MM-DD).');
     }
     if (endDate < startDate) {
-      res.status(400).json({ success: false, message: 'endDate must be >= startDate' });
-      return;
+      throw Errors.validation('endDate must be >= startDate.');
     }
 
     // Verify favorite user exists
     const favoriteUser = await User.findById(favoriteUserId);
     if (!favoriteUser || !favoriteUser.isActive) {
-      res.status(404).json({ success: false, message: 'Favorite user not found' });
-      return;
+      throw Errors.notFound('Favorite user not found.');
     }
 
     // Fetch data in parallel
@@ -227,9 +225,8 @@ export const matchPreview = async (
         lastUpdated: latestFavEntry ? new Date(latestFavEntry).toISOString() : null,
       },
     });
-  } catch (error: any) {
-      console.error('matchPreview error:', { message: (error as Error).message, stack: (error as Error).stack });
-    res.status(500).json({ success: false, message: 'Failed to generate match preview' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -240,7 +237,8 @@ export const matchPreview = async (
  */
 export const matchApply = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { favoriteUserId, dates, overrideLeave = false } = req.body;
@@ -249,26 +247,22 @@ export const matchApply = async (
 
     // Validate
     if (!favoriteUserId || !mongoose.isValidObjectId(favoriteUserId)) {
-      res.status(400).json({ success: false, message: 'Valid favoriteUserId is required' });
-      return;
+      throw Errors.validation('Valid favoriteUserId is required.');
     }
     if (!Array.isArray(dates) || dates.length === 0) {
-      res.status(400).json({ success: false, message: 'dates array is required' });
-      return;
+      throw Errors.validation('dates array is required.');
     }
 
     // Validate all date strings up-front before any DB work
     const invalidDates = dates.filter((d: string) => !isValidDate(d));
     if (invalidDates.length > 0) {
-      res.status(400).json({ success: false, message: `Invalid date(s): ${invalidDates.join(', ')}` });
-      return;
+      throw Errors.validation(`Invalid date(s): ${invalidDates.join(', ')}`);
     }
 
     // Verify favorite user still exists
     const favoriteUser = await User.findById(favoriteUserId);
     if (!favoriteUser || !favoriteUser.isActive) {
-      res.status(404).json({ success: false, message: 'Favorite user not found' });
-      return;
+      throw Errors.notFound('Favorite user not found.');
     }
 
     // Re-fetch favorite's entries for the requested dates
@@ -372,7 +366,16 @@ export const matchApply = async (
           results.push({ date, success: true });
         } catch (err: any) {
           console.error('matchApply: entry write failed', { date, error: err.message });
-          results.push({ date, success: false, message: 'Failed to apply' });
+          await session.abortTransaction();
+          res.status(500).json({
+            success: false,
+            data: {
+              processed: results.filter((r) => r.success).length,
+              skipped: results.filter((r) => !r.success).length + 1,
+              results: [...results, { date, success: false, message: 'Failed to apply — transaction aborted' }],
+            },
+          });
+          return;
         }
       }
 
@@ -398,8 +401,7 @@ export const matchApply = async (
     } finally {
       session.endSession();
     }
-  } catch (error: any) {
-    console.error('matchApply error:', { message: (error as Error).message, stack: (error as Error).stack });
-    res.status(500).json({ success: false, message: 'Failed to apply schedule alignment' });
+  } catch (error) {
+    next(error);
   }
 };

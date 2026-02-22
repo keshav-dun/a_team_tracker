@@ -1,10 +1,11 @@
-import { Response } from 'express';
+import { Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import Event from '../models/Event.js';
 import User from '../models/User.js';
 import Notification from '../models/Notification.js';
 import { AuthRequest } from '../types/index.js';
 import { notifyAdminAnnouncement } from '../utils/pushNotifications.js';
+import { Errors } from '../utils/AppError.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -58,7 +59,8 @@ async function createEventNotifications(
  */
 export const getEvents = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { startDate, endDate } = req.query as {
@@ -117,9 +119,8 @@ export const getEvents = async (
     });
 
     res.json({ success: true, data: enriched });
-  } catch (error: any) {
-    console.error('getEvents error:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch events' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -129,12 +130,12 @@ export const getEvents = async (
  */
 export const createEvent = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     if (!req.user) {
-      res.status(401).json({ success: false, message: 'Authentication required' });
-      return;
+      throw Errors.unauthorized();
     }
 
     const { date, title, description, eventType } = req.body;
@@ -171,16 +172,8 @@ export const createEvent = async (
     );
 
     res.status(201).json({ success: true, data: populated });
-  } catch (error: any) {
-    if (error.code === 11000) {
-      res.status(409).json({
-        success: false,
-        message: 'An event with this title already exists on this date',
-      });
-      return;
-    }
-    console.error('createEvent error:', error);
-    res.status(400).json({ success: false, message: 'Failed to create event' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -190,14 +183,14 @@ export const createEvent = async (
  */
 export const updateEvent = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      res.status(400).json({ success: false, message: 'Invalid event ID format' });
-      return;
+      throw Errors.validation('Invalid event ID format.');
     }
 
     const { date, title, description, eventType } = req.body;
@@ -205,8 +198,7 @@ export const updateEvent = async (
     // Fetch existing event to detect significant changes
     const existingEvent = await Event.findById(id);
     if (!existingEvent) {
-      res.status(404).json({ success: false, message: 'Event not found' });
-      return;
+      throw Errors.notFound('Event not found.');
     }
 
     const updateData: Record<string, unknown> = {};
@@ -221,8 +213,7 @@ export const updateEvent = async (
     }).populate('createdBy', 'name email');
 
     if (!event) {
-      res.status(404).json({ success: false, message: 'Event not found' });
-      return;
+      throw Errors.notFound('Event not found.');
     }
 
     // Send update notification if title or date changed
@@ -247,16 +238,8 @@ export const updateEvent = async (
     }
 
     res.json({ success: true, data: event });
-  } catch (error: any) {
-    if (error.code === 11000) {
-      res.status(409).json({
-        success: false,
-        message: 'An event with this title already exists on this date',
-      });
-      return;
-    }
-    console.error('updateEvent error:', error);
-    res.status(400).json({ success: false, message: 'Failed to update event' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -266,21 +249,20 @@ export const updateEvent = async (
  */
 export const deleteEvent = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      res.status(400).json({ success: false, message: 'Invalid event ID format' });
-      return;
+      throw Errors.validation('Invalid event ID format.');
     }
 
     const event = await Event.findByIdAndDelete(id);
 
     if (!event) {
-      res.status(404).json({ success: false, message: 'Event not found' });
-      return;
+      throw Errors.notFound('Event not found.');
     }
 
     // Remove associated event notifications
@@ -288,10 +270,9 @@ export const deleteEvent = async (
       eventId: new mongoose.Types.ObjectId(id),
     });
 
-    res.json({ success: true, message: 'Event deleted' });
-  } catch (error: any) {
-    console.error('deleteEvent error:', error);
-    res.status(500).json({ success: false, message: 'Unable to delete event' });
+    res.json({ success: true, message: 'Event deleted.' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -302,12 +283,12 @@ export const deleteEvent = async (
  */
 export const rsvpToEvent = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     if (!req.user) {
-      res.status(401).json({ success: false, message: 'Authentication required' });
-      return;
+      throw Errors.unauthorized();
     }
 
     const { eventId } = req.params;
@@ -328,19 +309,16 @@ export const rsvpToEvent = async (
     // Check if event exists and is not in the past
     const event = await Event.findById(eventId);
     if (!event) {
-      res.status(404).json({ success: false, message: 'Event not found' });
-      return;
+      throw Errors.notFound('Event not found.');
     }
 
     // Check if event date has passed
     const today = new Date().toISOString().slice(0, 10);
     if (event.date < today) {
-      res.status(400).json({ success: false, message: 'Cannot RSVP to past events' });
-      return;
+      throw Errors.dateLocked('Cannot RSVP to past events.');
     }
 
-    // Atomic update: Replace existing RSVP or add new one
-    // First, try to update existing RSVP
+    // Atomic update: try to update existing RSVP in-place first
     const updated = await Event.findOneAndUpdate(
       { _id: eventId, 'rsvps.userId': userId },
       {
@@ -353,20 +331,39 @@ export const rsvpToEvent = async (
     );
 
     if (!updated) {
-      // No existing RSVP — add new one
-      await Event.findByIdAndUpdate(
-        eventId,
-        {
-          $push: {
-            rsvps: {
-              userId,
-              status,
-              respondedAt: new Date(),
+      // No existing RSVP — attempt atomic $push; unique index prevents duplicates
+      try {
+        await Event.findByIdAndUpdate(
+          eventId,
+          {
+            $push: {
+              rsvps: {
+                userId,
+                status,
+                respondedAt: new Date(),
+              },
             },
           },
-        },
-        { new: true }
-      );
+          { new: true }
+        );
+      } catch (pushErr: any) {
+        // E11000 duplicate key error means a concurrent request already pushed;
+        // retry the in-place update so the latest status wins.
+        if (pushErr.code === 11000) {
+          await Event.findOneAndUpdate(
+            { _id: eventId, 'rsvps.userId': userId },
+            {
+              $set: {
+                'rsvps.$.status': status,
+                'rsvps.$.respondedAt': new Date(),
+              },
+            },
+            { new: true }
+          );
+        } else {
+          throw pushErr;
+        }
+      }
     }
 
     // Return the enriched event
@@ -376,8 +373,7 @@ export const rsvpToEvent = async (
       .lean();
 
     if (!refreshed) {
-      res.status(404).json({ success: false, message: 'Event not found' });
-      return;
+      throw Errors.notFound('Event not found.');
     }
 
     const rsvps = (refreshed as any).rsvps || [];
@@ -395,8 +391,7 @@ export const rsvpToEvent = async (
         myRsvpStatus: status,
       },
     });
-  } catch (error: any) {
-    console.error('rsvpToEvent error:', error);
-    res.status(500).json({ success: false, message: 'Failed to RSVP' });
+  } catch (error) {
+    next(error);
   }
 };

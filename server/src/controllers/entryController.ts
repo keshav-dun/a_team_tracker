@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import { Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import Entry from '../models/Entry.js';
 import User from '../models/User.js';
@@ -13,6 +13,7 @@ import {
 import { sanitizeText } from '../utils/sanitize.js';
 import { notifyTeamStatusChange } from '../utils/pushNotifications.js';
 import { createFavoriteNotifications } from './notificationController.js';
+import { Errors } from '../utils/AppError.js';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -90,7 +91,8 @@ const validateTimeWindow = (
  */
 export const upsertEntry = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { date, status, note, startTime, endTime, leaveDuration, halfDayPortion, workingPortion } = req.body;
@@ -117,11 +119,7 @@ export const upsertEntry = async (
 
     // Members can only edit dates within current month start → today + 90 days
     if (!isAdmin && !isMemberAllowedDate(date)) {
-      res.status(403).json({
-        success: false,
-        message: 'You can only edit dates within the current month and up to 90 days ahead',
-      });
-      return;
+      throw Errors.dateNotAllowed('You can only edit dates within the current month and up to 90 days ahead.');
     }
 
     // Validate time window
@@ -177,13 +175,8 @@ export const upsertEntry = async (
     }
 
     res.json({ success: true, data: entry });
-  } catch (error: any) {
-    if (error.code === 11000) {
-      res.status(409).json({ success: false, message: 'Duplicate entry' });
-      return;
-    }
-    console.error('upsertEntry error:', error);
-    res.status(500).json({ success: false, message: 'Failed to update entry' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -194,7 +187,8 @@ export const upsertEntry = async (
  */
 export const adminUpsertEntry = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { userId, date, status, note, startTime, endTime, leaveDuration, halfDayPortion, workingPortion } = req.body;
@@ -260,14 +254,13 @@ export const adminUpsertEntry = async (
 
     // Create favorite notifications for office days
     if (status === 'office') {
-      createFavoriteNotifications(userId.toString(), req.user!.name, [date])
+      createFavoriteNotifications(userId.toString(), targetUser.name, [date])
         .catch((favErr) => console.error('createFavoriteNotifications error:', favErr));
     }
 
     res.json({ success: true, data: entry });
-  } catch (error: any) {
-    console.error('adminUpsertEntry error:', error);
-    res.status(500).json({ success: false, message: 'Failed to update entry' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -277,7 +270,8 @@ export const adminUpsertEntry = async (
  */
 export const deleteEntry = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { date } = req.params;
@@ -285,11 +279,7 @@ export const deleteEntry = async (
     const isAdmin = req.user!.role === 'admin';
 
     if (!isAdmin && !isMemberAllowedDate(date)) {
-      res.status(403).json({
-        success: false,
-        message: 'You can only edit dates within the current month and up to 90 days ahead',
-      });
-      return;
+      throw Errors.dateNotAllowed('You can only edit dates within the current month and up to 90 days ahead.');
     }
 
     const entry = await Entry.findOneAndDelete({ userId, date });
@@ -298,9 +288,8 @@ export const deleteEntry = async (
       success: true,
       message: entry ? 'Entry removed (status reverted to WFH)' : 'No entry found',
     });
-  } catch (error: any) {
-    console.error('deleteEntry error:', error);
-    res.status(500).json({ success: false, message: 'Failed to delete entry' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -310,7 +299,8 @@ export const deleteEntry = async (
  */
 export const adminDeleteEntry = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { userId, date } = req.params;
@@ -321,9 +311,8 @@ export const adminDeleteEntry = async (
       success: true,
       message: entry ? 'Entry removed (status reverted to WFH)' : 'No entry found',
     });
-  } catch (error: any) {
-    console.error('adminDeleteEntry error:', error);
-    res.status(500).json({ success: false, message: 'Failed to delete entry' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -333,7 +322,8 @@ export const adminDeleteEntry = async (
  */
 export const getMyEntries = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { startDate, endDate } = req.query as {
@@ -363,9 +353,8 @@ export const getMyEntries = async (
     }).sort({ date: 1 });
 
     res.json({ success: true, data: entries });
-  } catch (error: any) {
-    console.error('getMyEntries error:', error);
-    res.status(500).json({ success: false, message: 'Failed to retrieve entries' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -375,7 +364,8 @@ export const getMyEntries = async (
  */
 export const getTeamEntries = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { month } = req.query as { month?: string };
@@ -437,9 +427,8 @@ export const getTeamEntries = async (
         team: teamData,
       },
     });
-  } catch (error: any) {
-    console.error('getTeamEntries error:', error);
-    res.status(500).json({ success: false, message: 'Failed to retrieve team entries' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -459,7 +448,8 @@ const filterAllowedDates = (dates: string[], isAdmin: boolean): string[] => {
  */
 export const bulkSetEntries = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { dates, status, note, startTime, endTime, leaveDuration, halfDayPortion, workingPortion } = req.body;
@@ -561,9 +551,8 @@ export const bulkSetEntries = async (
         results,
       },
     });
-  } catch (error: any) {
-    console.error('bulkSetEntries error:', error);
-    res.status(500).json({ success: false, message: 'Failed to process bulk entries' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -574,7 +563,8 @@ export const bulkSetEntries = async (
  */
 export const copyFromDate = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { sourceDate, targetDates } = req.body;
@@ -663,9 +653,8 @@ export const copyFromDate = async (
         results,
       },
     });
-  } catch (error: any) {
-    console.error('copyFromDate error:', error);
-    res.status(500).json({ success: false, message: 'Failed to copy entries' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -676,7 +665,8 @@ export const copyFromDate = async (
  */
 export const repeatPattern = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { status, daysOfWeek, startDate, endDate, note, startTime, endTime, leaveDuration, halfDayPortion, workingPortion } = req.body;
@@ -782,9 +772,8 @@ export const repeatPattern = async (
         results,
       },
     });
-  } catch (error: any) {
-    console.error('repeatPattern error:', error);
-    res.status(500).json({ success: false, message: 'Failed to process repeat pattern' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -795,7 +784,8 @@ export const repeatPattern = async (
  */
 export const copyRange = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { sourceStart, sourceEnd, targetStart } = req.body;
@@ -920,9 +910,8 @@ export const copyRange = async (
         results,
       },
     });
-  } catch (error: any) {
-    console.error('copyRange error:', error);
-    res.status(500).json({ success: false, message: 'Failed to copy range' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -932,7 +921,8 @@ export const copyRange = async (
  */
 export const getTeamSummary = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { month } = req.query as { month?: string };
@@ -986,8 +976,7 @@ export const getTeamSummary = async (
     });
 
     res.json({ success: true, data: summary });
-  } catch (error: any) {
-    console.error('getTeamSummary error:', error);
-    res.status(500).json({ success: false, message: 'Failed to retrieve team summary' });
+  } catch (error) {
+    next(error);
   }
 };

@@ -1,8 +1,9 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Entry from '../models/Entry.js';
 import { AuthRequest } from '../types/index.js';
+import { Errors } from '../utils/AppError.js';
 
 /**
  * Get all users (admin only) with pagination.
@@ -10,7 +11,8 @@ import { AuthRequest } from '../types/index.js';
  */
 export const getAllUsers = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const MAX_LIMIT = 100;
@@ -33,8 +35,8 @@ export const getAllUsers = async (
         totalPages: Math.ceil(total / limit),
       },
     });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -44,21 +46,21 @@ export const getAllUsers = async (
  */
 export const createUser = async (
   req: Request,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { name, email, password, role } = req.body;
 
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: email?.toLowerCase() });
     if (existingUser) {
-      res.status(400).json({ success: false, message: 'Email already registered' });
-      return;
+      throw Errors.emailExists();
     }
 
     const user = await User.create({ name, email, password, role: role || 'member' });
     res.status(201).json({ success: true, data: user.toJSON() });
-  } catch (error: any) {
-    res.status(400).json({ success: false, message: error.message });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -68,7 +70,8 @@ export const createUser = async (
  */
 export const updateUser = async (
   req: Request,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { id } = req.params;
@@ -86,13 +89,12 @@ export const updateUser = async (
     });
 
     if (!user) {
-      res.status(404).json({ success: false, message: 'User not found' });
-      return;
+      throw Errors.notFound('User not found.');
     }
 
     res.json({ success: true, data: user });
-  } catch (error: any) {
-    res.status(400).json({ success: false, message: error.message });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -102,32 +104,28 @@ export const updateUser = async (
  */
 export const resetUserPassword = async (
   req: Request,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { id } = req.params;
     const { password } = req.body;
 
     if (!password || password.length < 6) {
-      res.status(400).json({
-        success: false,
-        message: 'Password must be at least 6 characters',
-      });
-      return;
+      throw Errors.validation('Password must be at least 6 characters.');
     }
 
     const user = await User.findById(id).select('+password');
     if (!user) {
-      res.status(404).json({ success: false, message: 'User not found' });
-      return;
+      throw Errors.notFound('User not found.');
     }
 
     user.password = password;
     await user.save();
 
-    res.json({ success: true, message: 'Password reset successfully' });
-  } catch (error: any) {
-    res.status(400).json({ success: false, message: error.message });
+    res.json({ success: true, message: 'Password reset successfully.' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -137,7 +135,8 @@ export const resetUserPassword = async (
  */
 export const deleteUser = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   const session = await mongoose.startSession();
   try {
@@ -146,11 +145,7 @@ export const deleteUser = async (
     // Prevent admin from deleting themselves
     if (req.user!._id.toString() === id) {
       await session.endSession();
-      res.status(400).json({
-        success: false,
-        message: 'Cannot delete your own account',
-      });
-      return;
+      throw Errors.badRequest('Cannot delete your own account.');
     }
 
     await session.startTransaction();
@@ -159,8 +154,7 @@ export const deleteUser = async (
     if (!user) {
       await session.abortTransaction();
       await session.endSession();
-      res.status(404).json({ success: false, message: 'User not found' });
-      return;
+      throw Errors.notFound('User not found.');
     }
 
     // Remove all entries for this user
@@ -169,10 +163,12 @@ export const deleteUser = async (
     await session.commitTransaction();
     await session.endSession();
 
-    res.json({ success: true, message: 'User and their entries deleted' });
-  } catch (error: any) {
-    await session.abortTransaction();
+    res.json({ success: true, message: 'User and their entries deleted.' });
+  } catch (error) {
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
     await session.endSession();
-    res.status(400).json({ success: false, message: error.message });
+    next(error);
   }
 };

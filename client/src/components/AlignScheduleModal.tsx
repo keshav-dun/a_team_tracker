@@ -64,11 +64,11 @@ const AlignScheduleModal: React.FC<AlignScheduleModalProps> = ({
     };
   }, []);
 
-  const sourceUserId = typeof notification.sourceUser === 'object'
+  const sourceUserId = notification.sourceUser != null && typeof notification.sourceUser === 'object'
     ? notification.sourceUser._id
     : notification.sourceUser;
 
-  const sourceName = typeof notification.sourceUser === 'object'
+  const sourceName = notification.sourceUser != null && typeof notification.sourceUser === 'object'
     ? notification.sourceUser.name
     : 'User';
 

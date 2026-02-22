@@ -33,6 +33,12 @@ const notificationSchema = new Schema<INotification>(
     eventId: {
       type: Schema.Types.ObjectId,
       ref: 'Event',
+      required: [
+        function (this: INotification) {
+          return this.type === 'event_created' || this.type === 'event_updated';
+        },
+        'eventId is required for event_created and event_updated notifications',
+      ],
     },
     affectedDates: {
       type: [{

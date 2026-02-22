@@ -1,4 +1,5 @@
 import api from './client';
+export { getErrorMessage } from './client';
 import type {
   ApiResponse,
   AuthResponse,

@@ -117,5 +117,8 @@ eventSchema.index(
 eventSchema.index({ date: 1 });
 eventSchema.index({ 'rsvps.userId': 1 });
 
+// Unique compound index to prevent duplicate RSVPs per event
+eventSchema.index({ _id: 1, 'rsvps.userId': 1 }, { unique: true });
+
 const Event = mongoose.model<IEvent>('Event', eventSchema);
 export default Event;

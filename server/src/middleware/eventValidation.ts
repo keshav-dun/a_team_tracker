@@ -99,3 +99,20 @@ export const validateEventId = (
   }
   next();
 };
+
+/** Validate that :eventId param is a valid MongoDB ObjectId (used for RSVP route). */
+export const validateRsvpEventId = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): void => {
+  const { eventId } = req.params;
+  if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
+    res.status(400).json({
+      success: false,
+      message: 'Invalid event ID format',
+    });
+    return;
+  }
+  next();
+};

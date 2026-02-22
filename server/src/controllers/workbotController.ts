@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import { Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { AuthRequest } from '../types/index.js';
 import config from '../config/index.js';
@@ -10,6 +10,7 @@ import {
   getFutureDateString,
   toISTDateString,
 } from '../utils/date.js';
+import { Errors } from '../utils/AppError.js';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -427,7 +428,8 @@ function getWeekDates(today: Date, weekOffset: number): string[] {
 
 export const parseCommand = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const rawCommand: unknown = req.body?.command;
@@ -456,11 +458,9 @@ export const parseCommand = async (
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       if (errMsg.includes('OPENROUTER_API_KEY') && errMsg.includes('not configured')) {
-        res.status(503).json({ success: false, message: 'Workbot is not configured. Set OPENROUTER_API_KEY in server/.env.' });
-        return;
+        throw Errors.serviceUnavailable('Workbot is not configured. Set OPENROUTER_API_KEY in server/.env.');
       }
-      res.status(500).json({ success: false, message: 'Failed to parse command. Please try again.' });
-      return;
+      throw Errors.aiUnavailable('Failed to parse command. Please try again.');
     }
 
     // Extract JSON from response (handle markdown code fences)
@@ -498,8 +498,7 @@ export const parseCommand = async (
 
     res.json({ success: true, data: plan });
   } catch (error) {
-    console.error('Workbot parse error:', error);
-    res.status(500).json({ success: false, message: 'An internal error occurred while parsing the command.' });
+    next(error);
   }
 };
 
@@ -509,12 +508,12 @@ export const parseCommand = async (
 
 export const resolvePlan = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     if (!req.user) {
-      res.status(401).json({ success: false, message: 'Authentication required.' });
-      return;
+      throw Errors.unauthorized();
     }
 
     const { actions } = req.body as { actions?: ScheduleAction[] };
@@ -616,8 +615,7 @@ export const resolvePlan = async (
       },
     });
   } catch (error) {
-    console.error('Workbot resolve error:', error);
-    res.status(500).json({ success: false, message: 'An internal error occurred while resolving dates.' });
+    next(error);
   }
 };
 
@@ -627,12 +625,12 @@ export const resolvePlan = async (
 
 export const applyChanges = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     if (!req.user) {
-      res.status(401).json({ success: false, message: 'Authentication required.' });
-      return;
+      throw Errors.unauthorized();
     }
 
     const { changes } = req.body as { changes?: ApplyItem[] };
@@ -732,7 +730,6 @@ export const applyChanges = async (
       },
     });
   } catch (error) {
-    console.error('Workbot apply error:', error);
-    res.status(500).json({ success: false, message: 'An internal error occurred while applying changes.' });
+    next(error);
   }
 };

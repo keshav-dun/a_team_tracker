@@ -1,7 +1,8 @@
-import { Response } from 'express';
+import { Response, NextFunction } from 'express';
 import Template from '../models/Template.js';
 import { AuthRequest } from '../types/index.js';
 import { sanitizeText } from '../utils/sanitize.js';
+import { Errors } from '../utils/AppError.js';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -13,14 +14,14 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
  */
 export const getTemplates = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const templates = await Template.find({ userId: req.user!._id }).sort({ name: 1 });
     res.json({ success: true, data: templates });
-  } catch (error: any) {
-    console.error('getTemplates error:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -30,7 +31,8 @@ export const getTemplates = async (
  */
 export const createTemplate = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { name, status, startTime, endTime, note, leaveDuration, halfDayPortion, workingPortion } = req.body;
@@ -103,13 +105,8 @@ export const createTemplate = async (
     const template = await Template.create(templateData);
 
     res.status(201).json({ success: true, data: template });
-  } catch (error: any) {
-    if (error.code === 11000) {
-      res.status(409).json({ success: false, message: 'A template with that name already exists' });
-      return;
-    }
-    console.error('createTemplate error:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -119,7 +116,8 @@ export const createTemplate = async (
  */
 export const updateTemplate = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const { name, status, startTime, endTime, note, leaveDuration, halfDayPortion, workingPortion } = req.body;
@@ -198,16 +196,11 @@ export const updateTemplate = async (
       { new: true, runValidators: true }
     );
 
-    if (!template) { res.status(404).json({ success: false, message: 'Template not found' }); return; }
+    if (!template) { throw Errors.notFound('Template not found.'); }
 
     res.json({ success: true, data: template });
-  } catch (error: any) {
-    if (error.code === 11000) {
-      res.status(409).json({ success: false, message: 'A template with that name already exists' });
-      return;
-    }
-    console.error('updateTemplate error:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -217,7 +210,8 @@ export const updateTemplate = async (
  */
 export const deleteTemplate = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const template = await Template.findOneAndDelete({
@@ -226,13 +220,11 @@ export const deleteTemplate = async (
     });
 
     if (!template) {
-      res.status(404).json({ success: false, message: 'Template not found' });
-      return;
+      throw Errors.notFound('Template not found.');
     }
 
-    res.json({ success: true, message: 'Template deleted' });
-  } catch (error: any) {
-    console.error('deleteTemplate error:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    res.json({ success: true, message: 'Template deleted.' });
+  } catch (error) {
+    next(error);
   }
 };

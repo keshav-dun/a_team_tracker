@@ -19,14 +19,17 @@ import userRoutes from './routes/userRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import scheduleRoutes from './routes/scheduleRoutes.js';
 import { warmUpEmbeddings } from './utils/embeddings.js';
+import { requestLogger } from './middleware/requestLogger.js';
+import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
 
-// Middleware
+// ─── Global Middleware ──────────────────────────────────
 app.use(cors({ origin: config.clientUrl, credentials: true }));
 app.use(express.json());
+app.use(requestLogger);
 
-// Routes
+// ─── Routes ─────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/entries', entryRoutes);
 app.use('/api/admin', adminRoutes);
@@ -48,6 +51,10 @@ app.use('/api/schedule', scheduleRoutes);
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// ─── 404 + Global Error Handler (must be AFTER routes) ──
+app.use(notFoundHandler);
+app.use(globalErrorHandler);
 
 // Start server
 const start = async () => {
