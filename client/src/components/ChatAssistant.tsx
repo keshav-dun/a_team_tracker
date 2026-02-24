@@ -41,8 +41,8 @@ const SUGGESTED_QUESTIONS = [
   'What is my office percentage this month?',
   'Who is in office today?',
   'Which day next week has the highest attendance?',
-  'Compare my and john\'s office days this month',
-  'Suggest the best day to avoid overlap with john next month',
+  'Compare my and John\'s office days this month',
+  'Suggest the best day to avoid overlap with John next month',
   'Am I below the team average for office attendance?',
 ];
 
@@ -295,7 +295,7 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ pageName }) => {
         setIsLoading(false);
       }
     },
-    [isLoading]
+    [isLoading, messages]
   );
 
   const handleSubmit = (e: FormEvent) => {

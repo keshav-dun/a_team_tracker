@@ -74,16 +74,16 @@ export function resolveTimePeriod(question: string): DateRange {
   const q = question.toLowerCase();
   const { todayStr, today, currentYear, currentMonth } = todayDate();
 
-  // ── Explicit date literal YYYY-MM-DD ──────────────────────────
-  const isoMatch = q.match(/\b(\d{4}-\d{2}-\d{2})\b/);
-  if (isoMatch) {
-    return { startDate: isoMatch[1], endDate: isoMatch[1], label: isoMatch[1] };
-  }
-
   // ── "from X to Y" range ───────────────────────────────────────
   const rangeMatch = q.match(/from\s+(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})/);
   if (rangeMatch) {
     return { startDate: rangeMatch[1], endDate: rangeMatch[2], label: `${rangeMatch[1]} to ${rangeMatch[2]}` };
+  }
+
+  // ── Explicit date literal YYYY-MM-DD ──────────────────────────
+  const isoMatch = q.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if (isoMatch) {
+    return { startDate: isoMatch[1], endDate: isoMatch[1], label: isoMatch[1] };
   }
 
   // ── Yesterday ─────────────────────────────────────────────────
@@ -107,21 +107,21 @@ export function resolveTimePeriod(question: string): DateRange {
     return { startDate: todayStr, endDate: todayStr, label: 'today' };
   }
 
-  // ── "past N days" / "last N days" ─────────────────────────────
+  // ── "past N days" / "last N days" (inclusive of today: N days total) ──
   const pastNMatch = q.match(/(?:past|last)\s+(\d+)\s+days/);
   if (pastNMatch) {
     const n = parseInt(pastNMatch[1], 10);
     const d = new Date(today);
-    d.setDate(d.getDate() - n);
+    d.setDate(d.getDate() - (n - 1));
     return { startDate: formatAsISO(d), endDate: todayStr, label: `last ${n} days` };
   }
 
-  // ── "next N days" ─────────────────────────────────────────────
+  // ── "next N days" (inclusive of today: N days total) ───────────
   const nextNMatch = q.match(/next\s+(\d+)\s+days/);
   if (nextNMatch) {
     const n = parseInt(nextNMatch[1], 10);
     const d = new Date(today);
-    d.setDate(d.getDate() + n);
+    d.setDate(d.getDate() + (n - 1));
     return { startDate: todayStr, endDate: formatAsISO(d), label: `next ${n} days` };
   }
 
@@ -130,6 +130,7 @@ export function resolveTimePeriod(question: string): DateRange {
   if (dayMatch) {
     const targetDay = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].indexOf(dayMatch[1]);
     const isNextWeek = /\bnext week\b/.test(q);
+    const isLastWeek = /\blast week\b/.test(q);
     const isNextMonth = /\bnext month\b/.test(q);
 
     if (isNextMonth) {
@@ -139,6 +140,15 @@ export function resolveTimePeriod(question: string): DateRange {
       nm.setDate(nm.getDate() + offset);
       const dateStr = formatAsISO(nm);
       return { startDate: dateStr, endDate: dateStr, label: `${dayMatch[1]} next month` };
+    }
+
+    if (isLastWeek) {
+      const d = new Date(today);
+      const currentDay = d.getDay();
+      const daysBack = ((currentDay - targetDay + 7) % 7) + 7;
+      d.setDate(d.getDate() - daysBack);
+      const dateStr = formatAsISO(d);
+      return { startDate: dateStr, endDate: dateStr, label: `${dayMatch[1]} last week` };
     }
 
     const d = new Date(today);
@@ -152,7 +162,7 @@ export function resolveTimePeriod(question: string): DateRange {
     } else {
       const currentDay = d.getDay();
       let daysAhead = targetDay - currentDay;
-      if (daysAhead <= 0) daysAhead += 7;
+      if (daysAhead < 0) daysAhead += 7;
       d.setDate(d.getDate() + daysAhead);
     }
 
@@ -244,9 +254,18 @@ export function resolveTimePeriod(question: string): DateRange {
     const month = MONTH_NAMES[monthDateMatch[1].toLowerCase()];
     const day = parseInt(monthDateMatch[2], 10);
     let year = currentYear;
-    // If the date is in the past this year, use current year (historical query assumed)
-    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return { startDate: dateStr, endDate: dateStr, label: `${monthDateMatch[1]} ${day}` };
+    // Validate date is real
+    const dateObj = new Date(year, month - 1, day);
+    if (
+      dateObj.getFullYear() !== year ||
+      dateObj.getMonth() !== month - 1 ||
+      dateObj.getDate() !== day
+    ) {
+      // Invalid date (e.g., Feb 31) — fall through to other matchers
+    } else {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      return { startDate: dateStr, endDate: dateStr, label: `${monthDateMatch[1]} ${day}` };
+    }
   }
 
   // ── Reverse: "10th March" ────────────────────────────────────
@@ -261,8 +280,11 @@ export function resolveTimePeriod(question: string): DateRange {
   }
 
   // ── Month name alone e.g. "in February" / "for March" ────────
+  // Require contextual prefix for "may" to avoid false positives with the verb
   const monthOnlyMatch = q.match(
-    /\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b/i
+    /(?:(?:in|for|during|month of)\s+)(may)\b/i
+  ) || q.match(
+    /\b(january|february|march|april|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b/i
   );
   if (monthOnlyMatch) {
     const month = MONTH_NAMES[monthOnlyMatch[1].toLowerCase()];

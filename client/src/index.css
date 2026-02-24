@@ -732,7 +732,7 @@
   @apply shrink-0 text-green-500 dark:text-green-400 text-xs font-bold ml-1 mt-0.5;
 }
 .workbot-thinking-step-dots {
-  @apply inline-flex gap-0 ml-0.5 text-amber-500;
+  @apply inline-flex ml-0.5 text-amber-500;
 }
 .workbot-thinking-step-dots span {
   animation: thinkingDots 1.2s ease-in-out infinite;
@@ -746,6 +746,24 @@
 @keyframes thinkingDots {
   0%, 60%, 100% { opacity: 0.2; }
   30% { opacity: 1; }
+}
+
+/* ── Reduced-motion overrides for thinking animations ── */
+@media (prefers-reduced-motion: reduce) {
+  .workbot-thinking-pulse {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .workbot-thinking-step {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .workbot-thinking-step-dots span {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 /* ── Preview ── */

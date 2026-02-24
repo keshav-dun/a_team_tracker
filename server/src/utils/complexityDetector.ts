@@ -51,46 +51,46 @@ export interface RoutingDecision {
 
 /** Classify the user query intent using regex. Fast path (~0ms). */
 export function classifyIntent(question: string): SimpleIntent {
-  const q = question.toLowerCase();
+  const q = question;
 
   // Event queries
   if (
-    /\b(event|party|town hall|offsite|mandatory office|highlighted|company event|deadline|office closed)\b/.test(q)
+    /\b(event|party|town hall|offsite|mandatory office|highlighted|company event|deadline|office closed)\b/i.test(q)
   ) {
     return 'event_query';
   }
 
   // Personal attendance
   if (
-    /\b(my|i(?=\s|$)|i'm|am i|do i)\b/.test(q) &&
-    /\b(office|leave|wfh|work from home|attendance|percentage|percent|days|schedule|coming|in office|mostly)\b/.test(q)
+    /\b(my|i(?=\s|$)|i'm|am i|do i)\b/i.test(q) &&
+    /\b(office|leave|wfh|work from home|attendance|percentage|percent|days|schedule|coming|in office|mostly)\b/i.test(q)
   ) {
     return 'personal_attendance';
   }
 
   // Team analytics (aggregated)
   if (
-    /\b(most|least|highest|lowest|busiest|peak|which day|how many people|how many employees|maximum|minimum|everyone|all)\b/.test(q) &&
-    /\b(office|attendance|presence|in office|coming)\b/.test(q)
+    /\b(most|least|highest|lowest|busiest|peak|which day|how many people|how many employees|maximum|minimum|everyone|all)\b/i.test(q) &&
+    /\b(office|attendance|presence|in office|coming)\b/i.test(q)
   ) {
     return 'team_analytics';
   }
 
   // Team presence (specific person or "who is")
   if (
-    /\b(who is|who's|is \w+(?=\s|$)|when is|when's|when will|where is|\w+ coming|list .* office|list .* leave)\b/.test(q) &&
-    /\b(office|leave|wfh|tomorrow|today|monday|tuesday|wednesday|thursday|friday|next week|next month|this week|this month)\b/.test(q)
+    /\b(who is|who's|is \w+(?=\s|$)|when is|when's|when will|where is|\w+ coming|list .* office|list .* leave)\b/i.test(q) &&
+    /\b(office|leave|wfh|tomorrow|today|monday|tuesday|wednesday|thursday|friday|next week|next month|this week|this month)\b/i.test(q)
   ) {
     return 'team_presence';
   }
 
   // Broader team presence catch
-  if (/\b(who|is \w+)\b/.test(q) && /\b(office|leave|wfh|in|on)\b/.test(q)) {
+  if (/\b(who|is \w+)\b/i.test(q) && /\b(in office|on leave|wfh|working from home|on vacation)\b/i.test(q)) {
     return 'team_presence';
   }
 
   // Broader personal catch
-  if (/\b(my|i(?=\s|$))\b/.test(q) && /\b(calendar|schedule|office|leave)\b/.test(q)) {
+  if (/\b(my|i(?=\s|$))\b/i.test(q) && /\b(calendar|schedule|office days|leave days)\b/i.test(q)) {
     return 'personal_attendance';
   }
 
@@ -107,10 +107,11 @@ interface ComplexitySignal {
 }
 
 const COMPLEXITY_SIGNALS: ComplexitySignal[] = [
-  // Multi-person reference
+  // Multi-person reference — second branch requires nearby attendance context
+  // to avoid false positives on generic "X and Y" phrases like "pros and cons".
   {
     name: 'multi_person',
-    pattern: /\b(compare|vs\.?|versus|and\s+\w+(?:'s)?)\b.*\b(office|attendance|days|schedule|overlap)\b|\b(me\s+and\s+\w+|I\s+and\s+\w+|\w+\s+and\s+\w+(?:'s)?)\b/i,
+    pattern: /\b(compare|vs\.?|versus|and\s+\w+(?:'s)?)\b.*\b(office|attendance|days|schedule|overlap)\b|\b(me\s+and\s+\w+|I\s+and\s+\w+|\w+\s+and\s+\w+(?:'s)?)\b.*\b(office|attendance|days|schedule|overlap|leave|in today|coming in)\b/i,
   },
   // Optimization keywords
   {

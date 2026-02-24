@@ -8,6 +8,12 @@
 import User, { IUser } from '../models/User.js';
 
 /* ------------------------------------------------------------------ */
+/*  Constants                                                         */
+/* ------------------------------------------------------------------ */
+
+const TEAM_RESOLVE_LIMIT = 100;
+
+/* ------------------------------------------------------------------ */
 /*  Types                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -42,8 +48,8 @@ function escapeRegExp(s: string): string {
 async function resolveOneName(name: string): Promise<PersonResolutionResult> {
   const users = await User.find({
     isActive: true,
-    name: { $regex: escapeRegExp(name), $options: 'i' },
-  }).select('name email');
+    name: { $regex: '\\b' + escapeRegExp(name), $options: 'i' },
+  }).select('name');
 
   if (users.length === 0) {
     return {
@@ -55,7 +61,7 @@ async function resolveOneName(name: string): Promise<PersonResolutionResult> {
   if (users.length > 1) {
     const names = users.map((u) => u.name).join(', ');
     return {
-      resolved: users.map((u) => ({ userId: u._id.toString(), name: u.name })),
+      resolved: [],
       clarification: `I found multiple people matching "${name}": ${names}. Which one did you mean?`,
     };
   }
@@ -102,8 +108,8 @@ export async function resolvePeople(
           allResolved.push({ userId: u._id.toString(), name: u.name });
         }
       } else {
-        // Fall back to all active users
-        const allUsers = await User.find({ isActive: true }).select('name');
+        // Fall back to all active users (bounded)
+        const allUsers = await User.find({ isActive: true }).select('name').limit(TEAM_RESOLVE_LIMIT);
         for (const u of allUsers) {
           allResolved.push({ userId: u._id.toString(), name: u.name });
         }
@@ -138,15 +144,30 @@ export async function resolvePeople(
 /**
  * Extract person names from the question text using simple heuristics.
  * Used when the fast-path (Stage 0) detects a person reference.
+ * Returns all matched names (multi-word supported), or [] when none found.
  */
-export function extractPersonName(question: string): string | null {
+export function extractPersonName(question: string): string[] {
+  // MVP coverage limitations: these patterns handle common phrasing but
+  // may miss complex multi-person queries, indirect references ("my manager"),
+  // nicknames, or non-English names. Expand as real user queries surface.
   const patterns = [
-    /\bis\s+(\w+)\s+(on|in|coming|going)/i,
-    /\bwhen\s+is\s+(\w+)\s+(coming|going|in)/i,
-    /\bwhen\s+will\s+(\w+)\s+(be|come)/i,
-    /\bwhere\s+is\s+(\w+)/i,
-    /\b(\w+)\s+coming\s+to\s+office/i,
-    /\bis\s+(\w+)\s+on\s+leave/i,
+    // Existing core patterns
+    /\bis\s+([\w'-]+(?:\s+[\w'-]+)*)\s+(on|in|coming|going)/i,
+    /\bwhen\s+is\s+([\w'-]+(?:\s+[\w'-]+)*)\s+(coming|going|in)/i,
+    /\bwhen\s+will\s+([\w'-]+(?:\s+[\w'-]+)*)\s+(be|come)/i,
+    /\bwhere\s+is\s+([\w'-]+(?:\s+[\w'-]+)*)/i,
+    /\b([\w'-]+(?:\s+[\w'-]+)*)\s+coming\s+to\s+office/i,
+    /\bis\s+([\w'-]+(?:\s+[\w'-]+)*)\s+on\s+leave/i,
+    // Possessive form: "What is John's schedule?"
+    /\bwhat(?:'s|\s+is)\s+([\w'-]+(?:\s+[\w'-]+)*)'s\s+(?:schedule|status|leave|attendance)/i,
+    // Polite request: "Can you check on Alice?"
+    /\bcan\s+you\s+(?:check\s+on|look\s+up)\s+([\w'-]+(?:\s+[\w'-]+)*)/i,
+    // Tell me about: "Tell me about Bob's leave"
+    /\btell\s+me\s+about\s+([\w'-]+(?:\s+[\w'-]+)*)(?:'s\s+(?:leave|schedule|status|attendance))?/i,
+    // Wellbeing: "How is Sarah doing?"
+    /\bhow\s+is\s+([\w'-]+(?:\s+[\w'-]+)*)\s+(?:doing|feeling)/i,
+    // Show/get patterns: "Show me John's attendance"
+    /\b(?:show|get)\s+(?:me\s+)?([\w'-]+(?:\s+[\w'-]+)*)'s\s+(?:schedule|status|leave|attendance)/i,
   ];
 
   const stopWords = new Set([
@@ -154,15 +175,20 @@ export function extractPersonName(question: string): string | null {
     'that', 'this', 'next', 'all', 'some', 'each', 'every',
   ]);
 
+  const results: string[] = [];
+  const seen = new Set<string>();
+
   for (const pattern of patterns) {
     const match = question.match(pattern);
     if (match) {
-      const name = match[1].toLowerCase();
-      if (!stopWords.has(name)) {
-        return name;
+      const name = match[1].trim().toLowerCase();
+      const firstToken = name.split(/\s+/)[0];
+      if (!stopWords.has(firstToken) && !stopWords.has(name) && !seen.has(name)) {
+        seen.add(name);
+        results.push(name);
       }
     }
   }
 
-  return null;
+  return results;
 }

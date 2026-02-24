@@ -524,10 +524,6 @@ async function handleTeamPresence(question: string): Promise<string> {
     // For single-day queries
     if (workingDays.length === 1) {
       const date = workingDays[0];
-      const entryMap = new Map<string, string>();
-      entries.forEach((e) => {
-        if (e.date === date) entryMap.set(e.userId.toString(), e.status);
-      });
 
       const officeUsers: string[] = [];
       const leaveUsers: string[] = [];
@@ -701,12 +697,13 @@ async function handleEventQuery(question: string): Promise<string> {
  */
 export async function classifyAndAnswer(
   question: string,
-  user: { _id: any; name: string }
+  user: { _id: any; name: string },
+  precomputedIntent?: Intent
 ): Promise<string | null> {
   let intent: Intent = 'unknown';
   try {
     const q = question.trim();
-    intent = classifyIntent(q);
+    intent = precomputedIntent ?? classifyIntent(q);
 
     switch (intent) {
       case 'personal_attendance':
@@ -755,7 +752,7 @@ export const chatQuery = async (
     const answer = await classifyAndAnswer(q, {
       _id: req.user!._id,
       name: req.user!.name,
-    });
+    }, intent);
 
     res.json({
       success: true,

@@ -40,19 +40,16 @@ export function validateRelevance(
   // Check that the result's answersIntent matches the requested intent
   const resultIntent = result.answersIntent;
 
-  // Comparison intent but result has only one person
-  if (intent === 'comparison' && resultIntent === 'comparison') {
-    const comp = result as any;
-    if (comp.userA && comp.userB) {
-      // Two-person comparison — OK
-    } else if (comp.user && comp.teamAvgOfficePercent !== undefined) {
-      // Team average comparison — OK
-    } else {
-      return {
-        passed: false,
-        fallbackMessage: "I couldn't retrieve data for both people to make a comparison.",
-      };
-    }
+  // Comparison intent but result is neither a two-person nor team-avg comparison
+  if (
+    intent === 'comparison' &&
+    resultIntent !== 'comparison' &&
+    resultIntent !== 'team_avg_comparison'
+  ) {
+    return {
+      passed: false,
+      fallbackMessage: "I couldn't retrieve data for both people to make a comparison.",
+    };
   }
 
   // Overlap intent but no overlap computation
@@ -91,9 +88,16 @@ export function validateRelevance(
   }
 
   // Simulation with empty results
+  if (intent === 'simulate' && resultIntent !== 'simulate') {
+    return {
+      passed: false,
+      fallbackMessage: "I couldn't run the simulation. Please make sure you specified valid days and a target person.",
+    };
+  }
+
   if (intent === 'simulate' && resultIntent === 'simulate') {
     const sim = result as any;
-    if (sim.totalProposed === 0) {
+    if (!sim.totalProposed || (sim.totalProposed ?? 0) === 0) {
       return {
         passed: false,
         fallbackMessage: 'No proposed days fell within the working days of the given period.',

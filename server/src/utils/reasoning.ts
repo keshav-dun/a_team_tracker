@@ -23,7 +23,7 @@ export interface ComparisonResult {
 }
 
 export interface TeamAvgComparisonResult {
-  answersIntent: 'comparison';
+  answersIntent: 'team_avg_comparison';
   user: { name: string; stats: UserScheduleData['stats'] };
   teamAvgOfficePercent: number;
   teamAvgOfficeDays: number;
@@ -119,7 +119,7 @@ export function computeComparison(
   const whoHasMore =
     diff > 0 ? scheduleA.name : diff < 0 ? scheduleB.name : 'tied';
   const percentageDiff =
-    scheduleA.stats.officePercent - scheduleB.stats.officePercent;
+    Math.abs(scheduleA.stats.officePercent - scheduleB.stats.officePercent);
 
   return {
     answersIntent: 'comparison',
@@ -131,24 +131,33 @@ export function computeComparison(
   };
 }
 
+/**
+ * Compare a user's schedule against the team average.
+ * Automatically excludes userSchedule from allSchedules to avoid self-bias.
+ */
 export function computeTeamAvgComparison(
   userSchedule: UserScheduleData,
   allSchedules: UserScheduleData[],
 ): TeamAvgComparisonResult {
-  const totalPercent = allSchedules.reduce((s, u) => s + u.stats.officePercent, 0);
-  const totalDays = allSchedules.reduce((s, u) => s + u.stats.officeDays, 0);
-  const teamAvgOfficePercent = allSchedules.length > 0
-    ? Math.round(totalPercent / allSchedules.length)
+  // Exclude the user being compared so team average isn't self-biased
+  const others = allSchedules.filter(
+    (u) => u.userId !== userSchedule.userId,
+  );
+
+  const totalPercent = others.reduce((s, u) => s + u.stats.officePercent, 0);
+  const totalDays = others.reduce((s, u) => s + u.stats.officeDays, 0);
+  const teamAvgOfficePercent = others.length > 0
+    ? Math.round(totalPercent / others.length)
     : 0;
-  const teamAvgOfficeDays = allSchedules.length > 0
-    ? Math.round((totalDays / allSchedules.length) * 10) / 10
+  const teamAvgOfficeDays = others.length > 0
+    ? Math.round((totalDays / others.length) * 10) / 10
     : 0;
 
   const diff = userSchedule.stats.officePercent - teamAvgOfficePercent;
   const aboveOrBelow = diff > 0 ? 'above' : diff < 0 ? 'below' : 'at';
 
   return {
-    answersIntent: 'comparison',
+    answersIntent: 'team_avg_comparison',
     user: { name: userSchedule.name, stats: userSchedule.stats },
     teamAvgOfficePercent,
     teamAvgOfficeDays,
@@ -165,15 +174,17 @@ export function computeOverlap(
   scheduleA: UserScheduleData,
   scheduleB: UserScheduleData,
 ): OverlapResult {
-  const workingDays = scheduleA.workingDays; // Both should share the same working days
+  // Use the intersection of both schedules' working days
+  const workingDaysSetB = new Set(scheduleB.workingDays);
+  const workingDays = scheduleA.workingDays.filter((d) => workingDaysSetB.has(d));
   let totalOverlap = 0;
   const fullOverlapDays: string[] = [];
   const partialOverlapDays: string[] = [];
   const zeroOverlapDays: string[] = [];
 
   for (const day of workingDays) {
-    const scoreA = getPresenceScore(scheduleA.entryMap.get(day));
-    const scoreB = getPresenceScore(scheduleB.entryMap.get(day));
+    const scoreA = getPresenceScore(scheduleA.entryMap[day]);
+    const scoreB = getPresenceScore(scheduleB.entryMap[day]);
     const overlapScore = Math.min(scoreA, scoreB);
 
     if (overlapScore >= 1) {
@@ -220,7 +231,7 @@ export function computeMultiPersonOverlap(
 
   for (const day of workingDays) {
     const allInOffice = schedules.every(
-      (s) => getPresenceScore(s.entryMap.get(day)) >= 1,
+      (s) => getPresenceScore(s.entryMap[day]) >= 1,
     );
     if (allInOffice) {
       allInOfficeDays.push(day);
@@ -283,7 +294,7 @@ export function findOptimalDays(params: {
     if (onlyDaysOfWeek.size > 0 && !onlyDaysOfWeek.has(dayOfWeek)) continue;
 
     // Skip days where the user already has a leave entry
-    const userEntry = userSchedule.entryMap.get(day);
+    const userEntry = userSchedule.entryMap[day];
     if (userEntry?.status === 'leave' && userEntry.leaveDuration !== 'half') continue;
 
     let score = 0;
@@ -293,7 +304,7 @@ export function findOptimalDays(params: {
     switch (goal) {
       case 'minimize_overlap': {
         for (const target of targetSchedules) {
-          const targetScore = getPresenceScore(target.entryMap.get(day));
+          const targetScore = getPresenceScore(target.entryMap[day]);
           score += 1 - targetScore;
           if (targetScore === 0) {
             reasons.push(`${target.name} is NOT in office`);
@@ -306,7 +317,7 @@ export function findOptimalDays(params: {
       case 'maximize_overlap':
       case 'meeting_plan': {
         for (const target of targetSchedules) {
-          const targetScore = getPresenceScore(target.entryMap.get(day));
+          const targetScore = getPresenceScore(target.entryMap[day]);
           score += targetScore;
           if (targetScore >= 1) {
             reasons.push(`${target.name} is in office`);
@@ -317,9 +328,9 @@ export function findOptimalDays(params: {
         break;
       }
       case 'minimize_commute': {
-        // Bonus for consecutive days
-        score += 0.5; // base
-        reasons.push('Mid-week collaboration slot');
+        // Base commute preference score — no consecutive-day logic implemented yet
+        score += 0.5;
+        reasons.push('Base commute preference score');
         break;
       }
       case 'least_crowded': {
@@ -345,7 +356,7 @@ export function findOptimalDays(params: {
         // Default: maximize overlap with targets if any, else team presence
         if (targetSchedules.length > 0) {
           for (const target of targetSchedules) {
-            score += getPresenceScore(target.entryMap.get(day));
+            score += getPresenceScore(target.entryMap[day]);
           }
         } else if (tp) {
           score += tp.totalTeam > 0 ? tp.count / tp.totalTeam : 0;
@@ -368,7 +379,7 @@ export function findOptimalDays(params: {
   scored.sort((a, b) => b.score - a.score);
 
   // Pick top N
-  const count = requiredDays || Math.min(5, scored.length);
+  const count = requiredDays ?? Math.min(5, scored.length);
   const recommendations = scored.slice(0, count);
 
   return {
@@ -391,7 +402,7 @@ export function simulateSchedule(params: {
   const overlapDays: string[] = [];
 
   for (const day of proposedDays) {
-    const targetScore = getPresenceScore(targetSchedule.entryMap.get(day));
+    const targetScore = getPresenceScore(targetSchedule.entryMap[day]);
     if (targetScore > 0) {
       overlapDays.push(day);
     }

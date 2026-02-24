@@ -17,9 +17,9 @@ export function parseDateStr(d: string): { year: number; month: number; day: num
 
 /** Format a JS Date as YYYY-MM-DD (UTC-safe). */
 export function formatAsISO(d: Date): string {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
 
@@ -61,10 +61,7 @@ export function getWorkingDays(
   const endD = new Date(Date.UTC(end.year, end.month - 1, end.day));
 
   while (d <= endD) {
-    const yyyy = d.getUTCFullYear();
-    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(d.getUTCDate()).padStart(2, '0');
-    const dateStr = `${yyyy}-${mm}-${dd}`;
+    const dateStr = formatAsISO(d);
     const dow = d.getUTCDay();
 
     if (dow !== 0 && dow !== 6 && !holidaySet.has(dateStr)) {

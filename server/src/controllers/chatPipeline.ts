@@ -48,6 +48,34 @@ import User from '../models/User.js';
 import { getTodayString } from '../utils/date.js';
 
 /* ------------------------------------------------------------------ */
+/*  Constants                                                         */
+/* ------------------------------------------------------------------ */
+
+const TEAM_USER_LIMIT = 200;
+
+/**
+ * Fetch all active users' schedules and compute a team-average comparison
+ * against the given target schedule.
+ */
+async function computeTeamAvgFor(
+  targetSchedule: UserScheduleData,
+  startDate: string,
+  endDate: string,
+): Promise<ReasoningResult> {
+  const allUsers = await User.find({ isActive: true }).select('name').limit(TEAM_USER_LIMIT);
+  const allPeople: ResolvedPerson[] = allUsers.map((u) => ({
+    userId: u._id.toString(),
+    name: u.name,
+  }));
+  const allSchedules = await getMultipleUserSchedules(
+    allPeople,
+    startDate,
+    endDate,
+  );
+  return computeTeamAvgComparison(targetSchedule, allSchedules);
+}
+
+/* ------------------------------------------------------------------ */
 /*  Types                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -69,7 +97,8 @@ export interface PipelineOutput {
 /* ------------------------------------------------------------------ */
 
 // We import classifyAndAnswer dynamically to avoid circular deps
-let _classifyAndAnswer: ((q: string, u: { _id: any; name: string }) => Promise<string | null>) | null = null;
+type ClassifyAndAnswerFn = typeof import('../controllers/analyticsController.js')['classifyAndAnswer'];
+let _classifyAndAnswer: ClassifyAndAnswerFn | null = null;
 
 async function getFastPathHandler() {
   if (!_classifyAndAnswer) {
@@ -115,16 +144,16 @@ async function handleComplexQuery(
       const lastAssistant = [...history].reverse().find((h) => h.role === 'assistant');
       if (lastAssistant) {
         return {
-          answer: `Here's what my previous recommendation was based on:\n\n${lastAssistant.text}`,
+          answer: `Here's what I previously said:\n\n${lastAssistant.text}`,
           intent: 'explain_previous',
-          usedLlm: true,
+          usedLlm: false,
         };
       }
     }
     return {
-      answer: "I don't have a previous recommendation to explain. Could you ask a new question?",
+      answer: "I don't have a previous response to explain. Could you ask a new question?",
       intent: 'explain_previous',
-      usedLlm: true,
+      usedLlm: false,
     };
   }
 
@@ -170,36 +199,16 @@ async function handleComplexQuery(
           // Check if it's a "team average" comparison
           const q = question.toLowerCase();
           if (/\b(team average|average|below|above)\b/.test(q)) {
-            const allUsers = await User.find({ isActive: true }).select('name');
-            const allPeople: ResolvedPerson[] = allUsers.map((u) => ({
-              userId: u._id.toString(),
-              name: u.name,
-            }));
-            const allSchedules = await getMultipleUserSchedules(
-              allPeople,
-              dateRange.startDate,
-              dateRange.endDate,
-            );
             const mySchedule = schedules.find(
               (s) => s.userId === user._id.toString(),
             ) || schedules[0];
-            result = computeTeamAvgComparison(mySchedule, allSchedules);
+            result = await computeTeamAvgFor(mySchedule, dateRange.startDate, dateRange.endDate);
           } else {
             result = computeComparison(schedules[0], schedules[1]);
           }
         } else if (schedules.length === 1) {
           // Comparison against team average
-          const allUsers = await User.find({ isActive: true }).select('name');
-          const allPeople: ResolvedPerson[] = allUsers.map((u) => ({
-            userId: u._id.toString(),
-            name: u.name,
-          }));
-          const allSchedules = await getMultipleUserSchedules(
-            allPeople,
-            dateRange.startDate,
-            dateRange.endDate,
-          );
-          result = computeTeamAvgComparison(schedules[0], allSchedules);
+          result = await computeTeamAvgFor(schedules[0], dateRange.startDate, dateRange.endDate);
         }
         break;
       }
@@ -345,13 +354,21 @@ async function handleComplexQuery(
             'this month',
             'last month',
           );
-          coverages.push(currentSchedule.coverage, previousSchedule.coverage);
+          // Use trend-specific coverages so Stage 3 coverages are not mixed in
+          const trendCoverages: DataCoverage[] = [currentSchedule.coverage, previousSchedule.coverage];
+          coverages.length = 0;
+          coverages.push(...trendCoverages);
         }
         break;
       }
     }
   } catch (err) {
-    console.error('Pipeline Stage 4 error:', err);
+    console.error('Pipeline Stage 4 error:', {
+      question,
+      intent: extraction.intent,
+      error: err instanceof Error ? { message: err.message, stack: err.stack } : err,
+    });
+    throw err;
   }
 
   // ── Stage 5: Relevance Guard ────────────────────────────────────
@@ -367,8 +384,16 @@ async function handleComplexQuery(
 
   // ── Stage 6 + 7: Response Generation + Confidence Layer ─────────
 
+  if (!result) {
+    return {
+      answer: "I couldn't process that query. Please try rephrasing.",
+      intent: extraction.intent,
+      usedLlm: true,
+    };
+  }
+
   const answer = await generateResponse(
-    result!,
+    result,
     coverages,
     question,
     false, // Use templates by default; set true for LLM paraphrase
@@ -410,13 +435,15 @@ export async function processQuestion(
     // Use existing deterministic handlers
     try {
       const handler = await getFastPathHandler();
-      const answer = await handler(q, user);
-      if (answer) {
-        return {
-          answer,
-          intent: routing.simpleIntent,
-          usedLlm: false,
-        };
+      if (handler) {
+        const answer = await handler(q, user);
+        if (answer) {
+          return {
+            answer,
+            intent: routing.simpleIntent,
+            usedLlm: false,
+          };
+        }
       }
     } catch (err) {
       console.warn('Pipeline: fast path handler failed, falling through to slow path:', err);

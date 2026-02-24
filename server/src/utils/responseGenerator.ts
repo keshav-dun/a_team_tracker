@@ -162,20 +162,27 @@ const LLM_MODELS = [
   'deepseek/deepseek-r1-0528:free',
 ];
 
+const LLM_FETCH_TIMEOUT_MS = 12_000;
+
+/** Sanitize user-controlled text before injecting into LLM messages. */
+function sanitizeForPrompt(s: string): string {
+  return s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').replace(/`/g, "'").trim();
+}
+
 async function llmParaphrase(data: any, originalQuestion: string): Promise<string | null> {
   const apiKey = config.openRouterApiKey;
   if (!apiKey) return null;
 
-  const prompt = `You are formatting a workplace attendance answer. Convert the structured data below into a natural, concise response. Do NOT add information beyond what's provided. Keep the tone professional and helpful.
+  const systemContent = `You are formatting a workplace attendance answer. Convert the structured data below into a natural, concise response. Do NOT add information beyond what's provided. Preserve all numerical values and formatting. Keep the tone professional and helpful.
 
 Computed data:
-${JSON.stringify(data, null, 2)}
+${JSON.stringify(data, null, 2)}`;
 
-User's original question: "${originalQuestion}"
-
-Write a direct answer.`;
+  const userContent = sanitizeForPrompt(originalQuestion);
 
   for (const model of LLM_MODELS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), LLM_FETCH_TIMEOUT_MS);
     try {
       const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -187,13 +194,21 @@ Write a direct answer.`;
         },
         body: JSON.stringify({
           model,
-          messages: [{ role: 'system', content: prompt }],
+          messages: [
+            { role: 'system', content: systemContent },
+            { role: 'user', content: userContent },
+          ],
           max_tokens: 512,
           temperature: 0.3,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timer);
 
-      if (!res.ok) continue;
+      if (!res.ok) {
+        console.warn(`llmParaphrase: model ${model} returned HTTP ${res.status} ${res.statusText}`);
+        continue;
+      }
 
       const resData = (await res.json()) as {
         choices: { message: { content?: string; reasoning_content?: string; reasoning?: string } }[];
@@ -201,7 +216,9 @@ Write a direct answer.`;
       const msg = resData.choices?.[0]?.message;
       const answer = msg?.content?.trim() || msg?.reasoning_content?.trim() || msg?.reasoning?.trim() || '';
       if (answer) return answer;
-    } catch {
+    } catch (err: any) {
+      clearTimeout(timer);
+      console.warn(`llmParaphrase: model ${model} threw error:`, err?.message || err, err?.stack);
       continue;
     }
   }
@@ -231,14 +248,12 @@ export async function generateResponse(
 
   // Try template formatting first
   switch (result.answersIntent) {
-    case 'comparison': {
-      if ('userA' in result && 'userB' in result) {
-        text = formatComparison(result as ComparisonResult);
-      } else {
-        text = formatTeamAvgComparison(result as TeamAvgComparisonResult);
-      }
+    case 'comparison':
+      text = formatComparison(result as ComparisonResult);
       break;
-    }
+    case 'team_avg_comparison':
+      text = formatTeamAvgComparison(result as TeamAvgComparisonResult);
+      break;
     case 'overlap':
       text = formatOverlap(result as OverlapResult);
       break;
@@ -264,7 +279,9 @@ export async function generateResponse(
   if (useLlm) {
     try {
       const paraphrased = await llmParaphrase(result, question);
-      if (paraphrased) text = paraphrased;
+      if (paraphrased) {
+        text += '\n\n**Summary:** ' + paraphrased;
+      }
     } catch {
       // Use template output if LLM fails
     }

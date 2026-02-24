@@ -610,7 +610,19 @@ export const resolvePlan = async (
         }
 
         // Status-aware filtering: skip dates that don't match the filter
+        const ALLOWED_FILTER_STATUSES = ['wfh', 'office', 'leave'] as const;
         if (action.filterByCurrentStatus && existingEntryMap) {
+          if (!(ALLOWED_FILTER_STATUSES as readonly string[]).includes(action.filterByCurrentStatus)) {
+            changes.push({
+              date,
+              day: 'Unknown',
+              status: action.type === 'clear' ? 'clear' : (action.status || 'office'),
+              note: action.note,
+              valid: false,
+              validationMessage: `Invalid filterByCurrentStatus: ${action.filterByCurrentStatus}`,
+            });
+            continue;
+          }
           const currentStatus = existingEntryMap.get(date);
           // 'wfh' filter means "no entry exists" (WFH is the default)
           if (action.filterByCurrentStatus === 'wfh') {

@@ -12,6 +12,54 @@ import config from '../config/index.js';
 import type { ComplexIntent } from './complexityDetector.js';
 
 /* ------------------------------------------------------------------ */
+/*  Constants                                                         */
+/* ------------------------------------------------------------------ */
+
+const LLM_FETCH_TIMEOUT_MS = 15_000;
+
+const VALID_COMPLEX_INTENTS: ReadonlySet<string> = new Set<ComplexIntent>([
+  'comparison', 'overlap', 'avoid', 'optimize', 'simulate',
+  'meeting_plan', 'trend', 'multi_person_coordination',
+  'clarify_needed', 'out_of_scope', 'explain_previous',
+]);
+
+const VALID_OPTIMIZATION_GOALS: ReadonlySet<string> = new Set([
+  'minimize_overlap', 'maximize_overlap', 'minimize_commute',
+  'least_crowded', 'maximize_team_presence',
+]);
+
+function isValidComplexIntent(v: unknown): v is ComplexIntent {
+  return typeof v === 'string' && VALID_COMPLEX_INTENTS.has(v);
+}
+
+function isValidOptimizationGoal(v: unknown): v is LLMExtraction['optimizationGoal'] {
+  return typeof v === 'string' && VALID_OPTIMIZATION_GOALS.has(v);
+}
+
+function validateSimulationParams(
+  obj: unknown,
+): LLMExtraction['simulationParams'] | undefined {
+  if (!obj || typeof obj !== 'object') return undefined;
+  const raw = obj as Record<string, unknown>;
+  const result: LLMExtraction['simulationParams'] = {};
+  if (Array.isArray(raw.proposedDays)) {
+    result.proposedDays = raw.proposedDays.filter(
+      (d): d is string => typeof d === 'string',
+    );
+  }
+  if (Array.isArray(raw.proposedDayOfWeek)) {
+    result.proposedDayOfWeek = raw.proposedDayOfWeek.filter(
+      (d): d is string => typeof d === 'string',
+    );
+  }
+  // Return undefined if both arrays are empty/missing
+  if (!result.proposedDays?.length && !result.proposedDayOfWeek?.length) {
+    return undefined;
+  }
+  return result;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Types                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -126,6 +174,8 @@ async function callLLM(messages: Array<{ role: string; content: string }>): Prom
   let lastError = '';
 
   for (const model of LLM_MODELS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), LLM_FETCH_TIMEOUT_MS);
     try {
       const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -142,9 +192,12 @@ async function callLLM(messages: Array<{ role: string; content: string }>): Prom
           temperature: 0.1,
           response_format: { type: 'json_object' },
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timer);
 
       if (res.status === 429) {
+        await res.text(); // consume body to release socket
         lastError = `Rate limited (${model})`;
         continue;
       }
@@ -165,7 +218,12 @@ async function callLLM(messages: Array<{ role: string; content: string }>): Prom
       if (answer) return answer;
       lastError = `Empty answer (${model})`;
     } catch (err: unknown) {
-      lastError = err instanceof Error ? err.message : String(err);
+      clearTimeout(timer);
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        lastError = `Timeout (${model})`;
+      } else {
+        lastError = err instanceof Error ? err.message : String(err);
+      }
     }
   }
 
@@ -220,12 +278,14 @@ export async function extractStructured(
 
     // Validate and normalize
     return {
-      intent: parsed.intent || 'out_of_scope',
+      intent: isValidComplexIntent(parsed.intent) ? parsed.intent : 'out_of_scope',
       people: Array.isArray(parsed.people) ? parsed.people : [],
       timeRange: parsed.timeRange || 'this month',
       constraints: Array.isArray(parsed.constraints) ? parsed.constraints : [],
-      optimizationGoal: parsed.optimizationGoal || undefined,
-      simulationParams: parsed.simulationParams || undefined,
+      optimizationGoal: isValidOptimizationGoal(parsed.optimizationGoal)
+        ? parsed.optimizationGoal
+        : undefined,
+      simulationParams: validateSimulationParams(parsed.simulationParams),
       needsClarification: !!parsed.needsClarification,
       ambiguities: Array.isArray(parsed.ambiguities) ? parsed.ambiguities : [],
       outOfScopeReason: parsed.outOfScopeReason || undefined,

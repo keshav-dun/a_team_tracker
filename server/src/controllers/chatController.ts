@@ -165,9 +165,12 @@ async function generateAnswer(
 // Cache the dynamic import to avoid circular deps
 let _processQuestion: typeof import('./chatPipeline.js')['processQuestion'] | null = null;
 
-async function getProcessQuestion() {
+async function getProcessQuestion(): Promise<typeof import('./chatPipeline.js')['processQuestion']> {
   if (!_processQuestion) {
     const mod = await import('./chatPipeline.js');
+    if (!mod.processQuestion) {
+      throw new Error('processQuestion import missing from chatPipeline');
+    }
     _processQuestion = mod.processQuestion;
   }
   return _processQuestion;
@@ -260,6 +263,10 @@ export const chat = async (req: Request, res: Response, next: NextFunction): Pro
                   (h.role === 'user' || h.role === 'assistant'),
               )
               .slice(-6) // Cap at 3 turns (6 messages)
+              .map((h: any) => ({
+                role: h.role as 'user' | 'assistant',
+                text: sanitise(h.text).slice(0, MAX_QUESTION_LENGTH),
+              }))
           : undefined;
 
         const analyticsResult = await tryAnalyticsQuery(
