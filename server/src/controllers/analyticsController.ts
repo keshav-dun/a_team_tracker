@@ -347,7 +347,7 @@ function formatAsISO(d: Date): string {
 function extractPersonName(question: string): string | null {
   const q = question.toLowerCase();
 
-  // Patterns like "is Bala on leave", "when is Ankit coming", "is Ankit in office"
+  // Patterns like "is john on leave", "when is Ankit coming", "is Ankit in office"
   const patterns = [
     /\bis\s+(\w+)\s+(on|in|coming|going)/i,
     /\bwhen\s+is\s+(\w+)\s+(coming|going|in)/i,

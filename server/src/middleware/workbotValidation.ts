@@ -18,6 +18,7 @@ const scheduleActionSchema = z.object({
   status: z.enum(['office', 'leave']).optional(),
   dateExpressions: z.array(z.string().min(1)).min(1),
   note: z.string().max(MAX_NOTE_LENGTH).optional(),
+  filterByCurrentStatus: z.enum(['office', 'leave', 'wfh']).optional(),
 });
 
 const resolveSchema = z.object({
