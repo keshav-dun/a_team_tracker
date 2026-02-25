@@ -93,12 +93,17 @@ function fmtDate(d: Date): string {
 }
 
 function parsePeriod(today: Date, period: PeriodRef): { year: number; month: number } {
-  if (period === 'next_month') {
-    const year = today.getMonth() === 11 ? today.getFullYear() + 1 : today.getFullYear();
-    const month = (today.getMonth() + 1) % 12;
-    return { year, month };
+  switch (period) {
+    case 'next_month': {
+      const year = today.getMonth() === 11 ? today.getFullYear() + 1 : today.getFullYear();
+      const month = (today.getMonth() + 1) % 12;
+      return { year, month };
+    }
+    case 'this_month':
+      return { year: today.getFullYear(), month: today.getMonth() };
+    default:
+      throw new Error(`parsePeriod: unknown period "${period as string}". Expected "this_month" or "next_month".`);
   }
-  return { year: today.getFullYear(), month: today.getMonth() };
 }
 
 function daysInMonth(year: number, month: number): number {
@@ -137,8 +142,8 @@ function resolveExplicitDates(
   todayStr: string,
   params: { dates: string[] },
 ): DateToolResult {
-  const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   const resolved: string[] = [];
+  const unknowns: string[] = [];
 
   for (const raw of params.dates) {
     const lower = raw.toLowerCase().trim();
@@ -167,12 +172,15 @@ function resolveExplicitDates(
       resolved.push(fmtDate(d));
       continue;
     }
-    // "this Friday"
+    // "this Friday" — always resolve to the current or next occurrence (never past)
     const thisMatch = lower.match(/^this\s+(\w+)$/);
     if (thisMatch && DAY_MAP[thisMatch[1]] !== undefined) {
       const target = DAY_MAP[thisMatch[1]];
       const d = new Date(today);
-      const diff = target - d.getDay();
+      let diff = target - d.getDay();
+      // If diff is negative the target day has already passed this week;
+      // advance to the next occurrence so we never return a past date.
+      if (diff < 0) diff += 7;
       d.setDate(d.getDate() + diff);
       resolved.push(fmtDate(d));
       continue;
@@ -186,12 +194,17 @@ function resolveExplicitDates(
       resolved.push(fmtDate(d));
       continue;
     }
+
+    // Token did not match any known pattern
+    unknowns.push(raw);
   }
 
+  const hasUnknowns = unknowns.length > 0;
   return {
-    success: resolved.length > 0,
+    success: resolved.length > 0 && !hasUnknowns,
     dates: resolved,
     description: `Resolved ${resolved.length} explicit date(s)`,
+    ...(hasUnknowns ? { error: `Unrecognized date tokens: ${unknowns.join(', ')}` } : {}),
   };
 }
 
@@ -315,6 +328,7 @@ function expandMultipleDaysOfWeek(
   params: { period: PeriodRef; days: string[] },
 ): DateToolResult {
   const { year, month } = parsePeriod(today, params.period);
+  const invalidNames = params.days.filter(d => dayNameToNum(d) === -1);
   const targetDays = params.days.map(d => dayNameToNum(d)).filter(n => n !== -1);
   if (targetDays.length === 0) {
     return { success: false, dates: [], description: '', error: `No valid day names in: ${params.days.join(', ')}` };
@@ -327,10 +341,12 @@ function expandMultipleDaysOfWeek(
     if (targetSet.has(d.getDay())) dates.push(fmtDate(d));
   }
   const monthName = new Date(year, month, 1).toLocaleString('en-US', { month: 'long' });
+  const errorMsg = invalidNames.length > 0 ? `Dropped invalid day names: ${invalidNames.join(', ')}` : undefined;
   return {
     success: true,
     dates,
     description: `Every ${params.days.join(', ')} in ${monthName} ${year}: ${dates.length} dates`,
+    ...(errorMsg ? { error: errorMsg } : {}),
   };
 }
 
@@ -343,9 +359,10 @@ function expandRange(
 ): DateToolResult {
   const { year, month } = parsePeriod(today, params.period);
   const totalDays = daysInMonth(year, month);
+  const clampedStart = Math.max(params.start_day, 1);
   const clampedEnd = Math.min(params.end_day, totalDays);
   const dates: string[] = [];
-  for (let i = params.start_day; i <= clampedEnd; i++) {
+  for (let i = clampedStart; i <= clampedEnd; i++) {
     const d = new Date(year, month, i);
     if (isWeekday(d)) dates.push(fmtDate(d));
   }
@@ -353,7 +370,7 @@ function expandRange(
   return {
     success: true,
     dates,
-    description: `${monthName} ${params.start_day}–${clampedEnd}: ${dates.length} weekdays`,
+    description: `${monthName} ${clampedStart}–${clampedEnd}: ${dates.length} weekdays`,
   };
 }
 
@@ -528,6 +545,25 @@ function expandRestOfMonth(
 }
 
 /* ------------------------------------------------------------------ */
+/*  Tool parameter validation helper                                  */
+/* ------------------------------------------------------------------ */
+
+/** Lightweight runtime type check for tool params to avoid unsafe `as` casts. */
+function validateToolParams(tool: string, p: Record<string, unknown>, spec: Record<string, string>): void {
+  for (const [key, expectedType] of Object.entries(spec)) {
+    const val = p[key];
+    if (val === undefined || val === null) {
+      throw new Error(`${tool}: missing required param "${key}"`);
+    }
+    if (expectedType === 'array') {
+      if (!Array.isArray(val)) throw new Error(`${tool}: param "${key}" must be an array, got ${typeof val}`);
+    } else if (typeof val !== expectedType) {
+      throw new Error(`${tool}: param "${key}" must be ${expectedType}, got ${typeof val}`);
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Tool dispatcher                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -539,45 +575,59 @@ export function executeDateTool(
   toolCall: DateToolCall,
   todayStr: string,
 ): DateToolResult {
-  const today = new Date(todayStr + 'T00:00:00');
+  // Construct today's date with explicit IST offset so the calendar date is
+  // unambiguous regardless of server timezone.
+  const today = new Date(todayStr + 'T00:00:00+05:30');
   const p = toolCall.params;
 
   try {
     switch (toolCall.tool) {
       case 'resolve_dates':
+        validateToolParams('resolve_dates', p, { dates: 'array' });
         return resolveExplicitDates(today, todayStr, p as { dates: string[] });
 
       case 'expand_month':
+        validateToolParams('expand_month', p, { period: 'string' });
         return expandMonth(today, p as { period: PeriodRef });
 
       case 'expand_weeks':
+        validateToolParams('expand_weeks', p, { period: 'string', count: 'number', position: 'string' });
         return expandWeeks(today, p as { period: PeriodRef; count: number; position: PositionRef });
 
       case 'expand_working_days':
+        validateToolParams('expand_working_days', p, { period: 'string', count: 'number', position: 'string' });
         return expandWorkingDays(today, p as { period: PeriodRef; count: number; position: PositionRef });
 
       case 'expand_day_of_week':
+        validateToolParams('expand_day_of_week', p, { period: 'string', day: 'string' });
         return expandDayOfWeek(today, p as { period: PeriodRef; day: string });
 
       case 'expand_multiple_days_of_week':
+        validateToolParams('expand_multiple_days_of_week', p, { period: 'string', days: 'array' });
         return expandMultipleDaysOfWeek(today, p as { period: PeriodRef; days: string[] });
 
       case 'expand_range':
+        validateToolParams('expand_range', p, { period: 'string', start_day: 'number', end_day: 'number' });
         return expandRange(today, p as { period: PeriodRef; start_day: number; end_day: number });
 
       case 'expand_alternate':
+        validateToolParams('expand_alternate', p, { period: 'string', type: 'string' });
         return expandAlternate(today, p as { period: PeriodRef; type: 'calendar' | 'working' });
 
       case 'expand_half_month':
+        validateToolParams('expand_half_month', p, { period: 'string', half: 'string' });
         return expandHalfMonth(today, p as { period: PeriodRef; half: 'first' | 'second' });
 
       case 'expand_except':
+        validateToolParams('expand_except', p, { period: 'string', exclude_day: 'string' });
         return expandExcept(today, p as { period: PeriodRef; exclude_day: string });
 
       case 'expand_first_weekday_per_week':
+        validateToolParams('expand_first_weekday_per_week', p, { period: 'string' });
         return expandFirstWeekdayPerWeek(today, p as { period: PeriodRef });
 
       case 'expand_week_period':
+        validateToolParams('expand_week_period', p, { week: 'string' });
         return expandWeekPeriod(today, p as { week: 'this_week' | 'next_week' });
 
       case 'expand_rest_of_month':
@@ -644,15 +694,18 @@ Each action MUST include a "toolCall" field instead of "dateExpressions".
    Params: { "dates": ["2026-03-05", "next Monday", ...] }
 
 2. expand_month
-   Use for: "every day next month", "all days this month", "next month", "this month"
+   Use for: "every weekday next month", "all weekdays this month", "next month", "this month"
+   Returns weekdays (Mon–Fri) only.
    Params: { "period": "next_month" | "this_month" }
 
 3. expand_weeks
    Use for: "first 2 weeks of next month", "last week of next month", "last 3 weeks of this month"
+   Returns weekdays (Mon–Fri) only.
    Params: { "period": "next_month" | "this_month", "count": <number>, "position": "first" | "last" }
 
 4. expand_working_days
    Use for: "first 10 working days of next month", "last 5 business days of this month"
+   Returns weekdays (Mon–Fri) only.
    Params: { "period": "next_month" | "this_month", "count": <number>, "position": "first" | "last" }
 
 5. expand_day_of_week
@@ -665,20 +718,23 @@ Each action MUST include a "toolCall" field instead of "dateExpressions".
 
 7. expand_range
    Use for: "5th to 20th of next month", "1st to 14th of this month", "days 10 to 25 of next month"
+   Returns weekdays (Mon–Fri) only within the range.
    Params: { "period": "next_month" | "this_month", "start_day": <number>, "end_day": <number> }
 
 8. expand_alternate
    Use for: "every alternate day next month", "every other working day this month"
    Params: { "period": "next_month" | "this_month", "type": "calendar" | "working" }
-   Note: "calendar" = every 2nd calendar day. "working" = every 2nd weekday (Mon-Fri only).
+   Note: "calendar" = every 2nd calendar day (weekdays only). "working" = every 2nd weekday (Mon-Fri only).
 
 9. expand_half_month
    Use for: "first half of next month", "second half of this month"
+   Returns weekdays (Mon–Fri) only.
    Params: { "period": "next_month" | "this_month", "half": "first" | "second" }
    Note: First half = days 1-15. Second half = days 16-end.
 
 10. expand_except
-    Use for: "every day next month except Fridays", "all days this month except Mondays"
+    Use for: "every weekday next month except Fridays", "all weekdays this month except Mondays"
+    Returns weekdays (Mon–Fri) only, excluding the specified day.
     Params: { "period": "next_month" | "this_month", "exclude_day": "friday" | "monday" | ... }
 
 11. expand_first_weekday_per_week
@@ -687,10 +743,12 @@ Each action MUST include a "toolCall" field instead of "dateExpressions".
 
 12. expand_week_period
     Use for: "next week", "this week" (Mon-Fri)
+    Returns weekdays (Mon–Fri) only.
     Params: { "week": "next_week" | "this_week" }
 
 13. expand_rest_of_month
     Use for: "rest of this month", "remaining days this month"
+    Returns remaining weekdays (Mon–Fri) only.
     Params: {} (no parameters needed)
 `.trim();
 }

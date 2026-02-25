@@ -19,11 +19,13 @@
  */
 
 import 'dotenv/config';
-import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+// Do NOT set process.env.NODE_TLS_REJECT_UNAUTHORIZED globally.
+// If you need to trust a corporate/self-signed CA, set the
+// NODE_EXTRA_CA_CERTS environment variable when running this script:
+//   NODE_EXTRA_CA_CERTS=/path/to/ca-cert.pem node benchmark-agent.mjs
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -42,45 +44,34 @@ const OPENROUTER_BASE = 'https://openrouter.ai/api/v1/chat/completions';
 const NVIDIA_MODEL = 'meta/llama-3.3-70b-instruct';
 const OPENROUTER_MODEL = 'arcee-ai/trinity-large-preview:free';
 
+/** Request timeout in milliseconds */
+const TIMEOUT_MS = 60_000;
+
 const TODAY = '2026-02-25';
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const TODAY_DAY = DAY_NAMES[new Date(TODAY + 'T00:00:00').getDay()];
 const USER_NAME = 'Test User';
 
 /* ------------------------------------------------------------------ */
-/*  Load system prompt from workbotController.ts source               */
+/*  Load system prompt from compiled workbotController                 */
 /* ------------------------------------------------------------------ */
 
-function buildSystemPrompt() {
-  const srcPath = join(__dirname, 'src', 'controllers', 'workbotController.ts');
-  const src = readFileSync(srcPath, 'utf-8');
-
-  // Extract the buildParsePrompt function body
-  const match = src.match(/function buildParsePrompt\(.*?\).*?\{[\s\S]*?return `([\s\S]*?)`;[\s\n]*\}/);
-  if (!match) {
-    console.error('Could not extract system prompt from workbotController.ts');
+async function buildSystemPrompt() {
+  // Import the exported prompt builder from the compiled server output.
+  // Run `npm run build` first to ensure dist/ is up to date.
+  try {
+    const { buildParsePrompt } = await import('./dist/controllers/workbotController.js');
+    const prompt = buildParsePrompt(TODAY, USER_NAME);
+    console.log(`System prompt loaded via exported buildParsePrompt: ${prompt.length} chars\n`);
+    return prompt;
+  } catch (err) {
+    console.error(
+      'Could not import buildParsePrompt from dist/controllers/workbotController.js.',
+      'Run "npm run build" first to compile the TypeScript source.',
+      err.message,
+    );
     process.exit(1);
   }
-
-  // Replace template literals with actual values
-  let prompt = match[1];
-  prompt = prompt.replace(/\$\{todayStr\}/g, TODAY);
-  prompt = prompt.replace(/\$\{DAY_NAMES\[new Date\(todayStr \+ 'T00:00:00'\)\.getDay\(\)\]\}/g, TODAY_DAY);
-  prompt = prompt.replace(/\$\{userName\}/g, USER_NAME);
-
-  // The prompt now embeds toolSchemas via ${toolSchemas}. We need to inline it.
-  // Read the tool schema from dateTools.ts
-  const toolsSrc = readFileSync(join(__dirname, 'src', 'utils', 'dateTools.ts'), 'utf-8');
-  const schemaMatch = toolsSrc.match(/export function getToolSchemaPrompt\(\): string \{[\s\S]*?return `([\s\S]*?)`\.trim\(\);/);
-  if (schemaMatch) {
-    prompt = prompt.replace(/\$\{toolSchemas\}/g, schemaMatch[1].trim());
-  } else {
-    console.error('Could not extract tool schemas from dateTools.ts');
-    process.exit(1);
-  }
-
-  console.log(`System prompt loaded from source: ${prompt.length} chars\n`);
-  return prompt;
 }
 
 /* ------------------------------------------------------------------ */
@@ -522,71 +513,153 @@ const TEST_CASES = [
 ];
 
 /* ------------------------------------------------------------------ */
-/*  API callers                                                       */
+/*  API caller (shared)                                               */
 /* ------------------------------------------------------------------ */
 
-async function callNvidia(systemPrompt, userMessage) {
+/**
+ * Shared provider caller — removes duplication between NVIDIA / OpenRouter.
+ * @param {{ baseUrl: string; model: string; headers: Record<string,string> }} config
+ * @param {string} systemPrompt
+ * @param {string} userMessage
+ */
+async function callProvider(config, systemPrompt, userMessage) {
   const start = Date.now();
-  const res = await fetch(NVIDIA_BASE, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${NVIDIA_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: NVIDIA_MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-      max_tokens: 2048,
-      temperature: 0.1,
-      top_p: 1.0,
-    }),
-  });
+  const signal = AbortSignal.timeout(TIMEOUT_MS);
 
-  const ms = Date.now() - start;
-  if (!res.ok) {
-    const err = await res.text();
-    return { error: `HTTP ${res.status}: ${err.substring(0, 200)}`, ms, model: NVIDIA_MODEL };
+  try {
+    const res = await fetch(config.baseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...config.headers,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        max_tokens: 2048,
+        temperature: 0.1,
+        top_p: 1.0,
+      }),
+      signal,
+    });
+
+    const ms = Date.now() - start;
+    if (!res.ok) {
+      const err = await res.text();
+      return { error: `HTTP ${res.status}: ${err.substring(0, 200)}`, ms, model: config.model };
+    }
+
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content?.trim() || '';
+    return { content, ms, model: config.model };
+  } catch (err) {
+    const ms = Date.now() - start;
+    if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+      return { error: `Request timed out after ${TIMEOUT_MS}ms`, ms, model: config.model };
+    }
+    throw err;
   }
+}
 
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content?.trim() || '';
-  return { content, ms, model: NVIDIA_MODEL };
+async function callNvidia(systemPrompt, userMessage) {
+  return callProvider(
+    {
+      baseUrl: NVIDIA_BASE,
+      model: NVIDIA_MODEL,
+      headers: { Authorization: `Bearer ${NVIDIA_API_KEY}` },
+    },
+    systemPrompt,
+    userMessage,
+  );
 }
 
 async function callOpenRouter(systemPrompt, userMessage) {
-  const start = Date.now();
-  const res = await fetch(OPENROUTER_BASE, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-      'HTTP-Referer': CLIENT_URL,
-      'X-Title': 'A-Team-Tracker-Benchmark',
-    },
-    body: JSON.stringify({
+  return callProvider(
+    {
+      baseUrl: OPENROUTER_BASE,
       model: OPENROUTER_MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-      max_tokens: 2048,
-      temperature: 0.1,
-      top_p: 1.0,
-    }),
-  });
+      headers: {
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        'HTTP-Referer': CLIENT_URL,
+        'X-Title': 'A-Team-Tracker-Benchmark',
+      },
+    },
+    systemPrompt,
+    userMessage,
+  );
+}
 
-  const ms = Date.now() - start;
-  if (!res.ok) {
-    const err = await res.text();
-    return { error: `HTTP ${res.status}: ${err.substring(0, 200)}`, ms, model: OPENROUTER_MODEL };
+/**
+ * Race mode — fire NVIDIA + OpenRouter in parallel via Promise.any().
+ * Returns whichever responds first with a valid answer.
+ * Aborts the slower provider once a winner is found.
+ */
+async function callRace(systemPrompt, userMessage) {
+  const raceStart = Date.now();
+  const raceAbort = new AbortController();
+
+  const makeCall = async (label, baseUrl, model, headers) => {
+    const signal = AbortSignal.any
+      ? AbortSignal.any([AbortSignal.timeout(TIMEOUT_MS), raceAbort.signal])
+      : raceAbort.signal;
+    const start = Date.now();
+    try {
+      const res = await fetch(baseUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+          ],
+          max_tokens: 2048,
+          temperature: 0.1,
+          top_p: 1.0,
+        }),
+        signal,
+      });
+      const ms = Date.now() - start;
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`[${label}] HTTP ${res.status}: ${err.substring(0, 200)}`);
+      }
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content?.trim() || '';
+      if (!content) throw new Error(`[${label}] Empty response`);
+      return { content, ms, model, winner: label };
+    } catch (err) {
+      const ms = Date.now() - start;
+      if (err.name === 'AbortError' && raceAbort.signal.aborted) {
+        throw new Error(`[${label}] Lost race (aborted)`);
+      }
+      throw new Error(`[${label}] ${err.message} (${ms}ms)`);
+    }
+  };
+
+  try {
+    const result = await Promise.any([
+      makeCall('NVIDIA', NVIDIA_BASE, NVIDIA_MODEL, {
+        Authorization: `Bearer ${NVIDIA_API_KEY}`,
+      }),
+      makeCall('OPENROUTER', OPENROUTER_BASE, OPENROUTER_MODEL, {
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        'HTTP-Referer': CLIENT_URL,
+        'X-Title': 'A-Team-Tracker-Benchmark',
+      }),
+    ]);
+    raceAbort.abort(); // cancel the loser
+    const totalMs = Date.now() - raceStart;
+    console.log(`    🏆 Race winner: ${result.winner} (${result.ms}ms, total race: ${totalMs}ms)`);
+    return { ...result, ms: totalMs };
+  } catch (aggErr) {
+    const totalMs = Date.now() - raceStart;
+    const errors = aggErr.errors?.map(e => e.message).join(' | ') || aggErr.message;
+    return { error: `All providers failed: ${errors}`, ms: totalMs, model: 'race' };
   }
-
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content?.trim() || '';
-  return { content, ms, model: OPENROUTER_MODEL };
 }
 
 /* ------------------------------------------------------------------ */
@@ -771,17 +844,18 @@ function finishEval(testCase, parsed, action, checks, failures, status) {
 /* ------------------------------------------------------------------ */
 
 async function runAllTests() {
-  const systemPrompt = buildSystemPrompt();
+  const systemPrompt = await buildSystemPrompt();
 
   console.log(`Starting Agent Tool-Calling Benchmark at ${new Date().toISOString()}\n`);
   console.log('╔══════════════════════════════════════════════════════════════════╗');
-  console.log('║     WORKBOT AGENT BENCHMARK — 30 Queries (Tool-Call Flow)       ║');
+  console.log('║  WORKBOT AGENT BENCHMARK — 30 Queries (Tool-Call Flow + Race)   ║');
   console.log('║  Tests all 13 date tools + clear/half-day/filter/referenceUser  ║');
   console.log('╚══════════════════════════════════════════════════════════════════╝');
   console.log('');
 
   const nvidiaResults = [];
   const openRouterResults = [];
+  const raceResults = [];
 
   for (const tc of TEST_CASES) {
     console.log('══════════════════════════════════════════════════════════════════════');
@@ -873,17 +947,54 @@ async function runAllTests() {
       openRouterResults.push({ id: tc.id, status: 'FAIL', failures: ['Exception'], ms: 0, checks: [] });
     }
 
+    // Race (NVIDIA + OpenRouter in parallel)
+    console.log('\n  🏁 RACE (NVIDIA vs OpenRouter):');
+    try {
+      const raceResult = await callRace(systemPrompt, tc.command);
+      if (raceResult.error) {
+        console.log(`  ERROR: ${raceResult.error} (${raceResult.ms}ms)`);
+        raceResults.push({ id: tc.id, status: 'FAIL', failures: ['Race failed'], ms: raceResult.ms, checks: [] });
+      } else {
+        const parsed = extractJSON(raceResult.content);
+        console.log(`  Winner: ${raceResult.winner}, Model: ${raceResult.model} (${raceResult.ms}ms)`);
+
+        if (parsed) {
+          const action = parsed.actions?.[0];
+          console.log(`  JSON: type="${action?.type}", status="${action?.status}"`);
+          if (action?.toolCall) {
+            console.log(`  ToolCall: ${JSON.stringify(action.toolCall)}`);
+          } else if (action?.dateExpressions) {
+            console.log(`  LEGACY DateExpressions: ${JSON.stringify(action.dateExpressions)}`);
+          }
+          if (action?.referenceUser) console.log(`  ReferenceUser: ${action.referenceUser}, Condition: ${action.referenceCondition}`);
+          if (action?.filterByCurrentStatus) console.log(`  FilterByStatus: ${action.filterByCurrentStatus}`);
+          if (action?.leaveDuration) console.log(`  LeaveDuration: ${action.leaveDuration}, Portion: ${action.halfDayPortion}`);
+          if (parsed.targetUser) console.log(`  ⚠ targetUser: "${parsed.targetUser}" (WILL BLOCK!)`);
+        } else {
+          console.log(`  ⚠ Could not parse JSON from: ${raceResult.content.substring(0, 200)}`);
+        }
+
+        const evalResult = evaluate(tc, parsed);
+        console.log(`  Result: ${evalResult.status}`);
+        evalResult.checks.forEach(c => console.log(`    ${c}`));
+        raceResults.push({ id: tc.id, ...evalResult, ms: raceResult.ms, winner: raceResult.winner });
+      }
+    } catch (err) {
+      console.log(`  ERROR: ${err.message}`);
+      raceResults.push({ id: tc.id, status: 'FAIL', failures: ['Exception'], ms: 0, checks: [] });
+    }
+
     console.log('');
   }
 
-  printSummary(nvidiaResults, openRouterResults);
+  printSummary(nvidiaResults, openRouterResults, raceResults);
 }
 
 /* ------------------------------------------------------------------ */
 /*  Summary                                                           */
 /* ------------------------------------------------------------------ */
 
-function printSummary(nvidiaResults, openRouterResults) {
+function printSummary(nvidiaResults, openRouterResults, raceResults) {
   console.log('\n╔══════════════════════════════════════════════════════════════════╗');
   console.log('║                   FINAL EVALUATION SUMMARY                      ║');
   console.log('╚══════════════════════════════════════════════════════════════════╝');
@@ -891,6 +1002,7 @@ function printSummary(nvidiaResults, openRouterResults) {
   for (const [label, results, model] of [
     ['NVIDIA', nvidiaResults, NVIDIA_MODEL],
     ['OPENROUTER', openRouterResults, OPENROUTER_MODEL],
+    ['RACE', raceResults, 'fastest-wins'],
   ]) {
     const pass = results.filter(r => r.status === 'PASS').length;
     const partial = results.filter(r => r.status === 'PARTIAL').length;
@@ -952,39 +1064,58 @@ function printSummary(nvidiaResults, openRouterResults) {
   console.log('  TOOL-CALL ADOPTION METRICS');
   console.log('════════════════════════════════════════════════════════════════');
 
-  for (const [label, results] of [['NVIDIA', nvidiaResults], ['OPENROUTER', openRouterResults]]) {
+  for (const [label, results] of [['NVIDIA', nvidiaResults], ['OPENROUTER', openRouterResults], ['RACE', raceResults]]) {
     const usedToolCall = results.filter(r => !(r.failures || []).includes('Used legacy dateExpressions instead of toolCall') && !(r.failures || []).includes('No date resolution method'));
     const usedLegacy = results.filter(r => (r.failures || []).includes('Used legacy dateExpressions instead of toolCall'));
     const noMethod = results.filter(r => (r.failures || []).includes('No date resolution method'));
     console.log(`  ${label}: ${usedToolCall.length}/${results.length} used toolCall, ${usedLegacy.length} used legacy, ${noMethod.length} had no date method`);
   }
 
+  // Race winner distribution
+  const raceWinners = raceResults.reduce((acc, r) => {
+    if (r.winner) acc[r.winner] = (acc[r.winner] || 0) + 1;
+    return acc;
+  }, {});
+  console.log('\n════════════════════════════════════════════════════════════════');
+  console.log('  RACE MODE STATS');
+  console.log('════════════════════════════════════════════════════════════════');
+  const racePass = raceResults.filter(r => r.status === 'PASS').length;
+  const raceAvg = Math.round(raceResults.reduce((s, r) => s + (r.ms || 0), 0) / (raceResults.length || 1));
+  console.log(`  Race Results:  ${racePass}/${raceResults.length} PASS (${Math.round(racePass / (raceResults.length || 1) * 100)}%)`);
+  console.log(`  Race Avg Latency: ${raceAvg}ms`);
+  console.log(`  Race Winners:  ${Object.entries(raceWinners).map(([k, v]) => `${k}: ${v}`).join(', ') || 'none'}`);
+
   // Head-to-head
   console.log('\n════════════════════════════════════════════════════════════════');
-  console.log('  HEAD-TO-HEAD COMPARISON');
+  console.log('  HEAD-TO-HEAD COMPARISON (incl. Race)');
   console.log('════════════════════════════════════════════════════════════════');
-  console.log('  Q#    NVIDIA       OPENROUTER   Winner');
-  console.log('  ──────────────────────────────────────────');
+  console.log('  Q#    NVIDIA       OPENROUTER   RACE         Best');
+  console.log('  ─────────────────────────────────────────────────────────');
 
-  let nvWins = 0, orWins = 0, ties = 0;
+  let nvWins = 0, orWins = 0, rcWins = 0, ties = 0;
   const statusRank = { PASS: 3, PARTIAL: 2, FAIL: 1 };
 
   for (const tc of TEST_CASES) {
     const nv = nvidiaResults.find(r => r.id === tc.id);
     const or = openRouterResults.find(r => r.id === tc.id);
+    const rc = raceResults.find(r => r.id === tc.id);
     const nvR = statusRank[nv?.status] || 0;
     const orR = statusRank[or?.status] || 0;
+    const rcR = statusRank[rc?.status] || 0;
 
-    let winner = 'TIE';
-    if (nvR > orR) { winner = 'NVIDIA'; nvWins++; }
-    else if (orR > nvR) { winner = 'OPENROUTER'; orWins++; }
+    const maxR = Math.max(nvR, orR, rcR);
+    let best = 'TIE';
+    if (maxR === nvR && maxR > orR && maxR > rcR) { best = 'NVIDIA'; nvWins++; }
+    else if (maxR === orR && maxR > nvR && maxR > rcR) { best = 'OPENROUTER'; orWins++; }
+    else if (maxR === rcR && maxR > nvR && maxR > orR) { best = 'RACE'; rcWins++; }
     else { ties++; }
 
-    console.log(`  Q${String(tc.id).padStart(2, '0')}  ${(nv?.status || '?').padEnd(12)} ${(or?.status || '?').padEnd(12)} ${winner}`);
+    console.log(`  Q${String(tc.id).padStart(2, '0')}  ${(nv?.status || '?').padEnd(12)} ${(or?.status || '?').padEnd(12)} ${(rc?.status || '?').padEnd(12)} ${best}`);
   }
 
   console.log(`\n  NVIDIA Wins:     ${nvWins}`);
   console.log(`  OpenRouter Wins: ${orWins}`);
+  console.log(`  Race Wins:       ${rcWins}`);
   console.log(`  Ties:            ${ties}`);
 
   // Critical: targetUser false positives
@@ -1000,8 +1131,18 @@ function printSummary(nvidiaResults, openRouterResults) {
   // Overall
   const nvPass = nvidiaResults.filter(r => r.status === 'PASS').length;
   const orPass = openRouterResults.filter(r => r.status === 'PASS').length;
-  console.log(`\n  Overall: NVIDIA ${nvPass}/30 (${Math.round(nvPass / 30 * 100)}%) | OpenRouter ${orPass}/30 (${Math.round(orPass / 30 * 100)}%)`);
-  console.log(`  Winner: ${nvPass > orPass ? 'NVIDIA' : orPass > nvPass ? 'OpenRouter' : 'TIE'}\n`);
+  const rcPass = raceResults.filter(r => r.status === 'PASS').length;
+  const totalTests = nvidiaResults.length;
+  const nvAvg = Math.round(nvidiaResults.reduce((s, r) => s + (r.ms || 0), 0) / (totalTests || 1));
+  const orAvg = Math.round(openRouterResults.reduce((s, r) => s + (r.ms || 0), 0) / (totalTests || 1));
+  const rcAvg = Math.round(raceResults.reduce((s, r) => s + (r.ms || 0), 0) / (totalTests || 1));
+  console.log(`\n  Overall Accuracy:`);
+  console.log(`    NVIDIA:     ${nvPass}/${totalTests} (${Math.round(nvPass / totalTests * 100)}%) — avg ${nvAvg}ms`);
+  console.log(`    OpenRouter: ${orPass}/${totalTests} (${Math.round(orPass / totalTests * 100)}%) — avg ${orAvg}ms`);
+  console.log(`    Race:       ${rcPass}/${totalTests} (${Math.round(rcPass / totalTests * 100)}%) — avg ${rcAvg}ms`);
+  const scores = [['NVIDIA', nvPass, nvAvg], ['OpenRouter', orPass, orAvg], ['Race', rcPass, rcAvg]];
+  scores.sort((a, b) => b[1] - a[1] || a[2] - b[2]);
+  console.log(`  Best: ${scores[0][0]} (${scores[0][1]} PASS, ${scores[0][2]}ms avg)\n`);
 
   console.log(`Benchmark completed at ${new Date().toISOString()}\n`);
 }

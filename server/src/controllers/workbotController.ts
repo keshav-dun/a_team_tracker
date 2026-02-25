@@ -113,7 +113,7 @@ async function callLLM(systemPrompt: string, userMessage: string): Promise<strin
  * The user's command is NOT embedded here — it is sent as a separate user message
  * to prevent prompt injection.
  */
-function buildParsePrompt(todayStr: string, userName: string): string {
+export function buildParsePrompt(todayStr: string, userName: string): string {
   const toolSchemas = getToolSchemaPrompt();
 
   return `You are a scheduling assistant parser. Today's date is ${todayStr} (${DAY_NAMES[new Date(todayStr + 'T00:00:00').getDay()]}).
@@ -276,11 +276,16 @@ function resolveDateExpressions(expressions: string[], todayStr: string): string
       continue;
     }
 
-    // "every day next month except <dayName>" / "every day except <dayName> next month"
-    const everyDayExceptMatch = lower.match(/^every\s+day\s+(next month|this month)\s+except\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?$/);
+    // "every day next month except <dayName>" or "every day except <dayName> next month"
+    const everyDayExceptMatch = lower.match(/^every\s+day\s+(next month|this month)\s+except\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?$/)
+      || lower.match(/^every\s+day\s+except\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?\s+(next month|this month)$/);
     if (everyDayExceptMatch) {
-      const period = everyDayExceptMatch[1];
-      const excludeDay = dayNameToNum(everyDayExceptMatch[2]);
+      // Both regex variants capture period & day but in swapped group order;
+      // detect which matched by checking if group 1 is a period or a day name.
+      const g1 = everyDayExceptMatch[1];
+      const isPeriodFirst = g1 === 'next month' || g1 === 'this month';
+      const period = isPeriodFirst ? g1 : everyDayExceptMatch[2];
+      const excludeDay = dayNameToNum(isPeriodFirst ? everyDayExceptMatch[2] : g1);
       const { year, month } = getMonthYearForPeriod(today, period);
       const daysInMonth = new Date(year, month + 1, 0).getDate();
       for (let i = 1; i <= daysInMonth; i++) {
@@ -454,7 +459,7 @@ function resolveDateExpressions(expressions: string[], todayStr: string): string
     // Date range: "1st to 14th of next month", "5 to 20 of next month", "day 1 to day 14 next month"
     const dateRangeMatch = lower.match(/^(?:day\s+)?(\d{1,2})(?:st|nd|rd|th)?\s+(?:to|through|-)\s+(?:day\s+)?(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(next month|this month)$/);
     if (dateRangeMatch) {
-      const startDay = parseInt(dateRangeMatch[1]);
+      const startDay = Math.max(parseInt(dateRangeMatch[1]), 1);
       const endDay = parseInt(dateRangeMatch[2]);
       const period = dateRangeMatch[3];
       const { year, month } = getMonthYearForPeriod(today, period);

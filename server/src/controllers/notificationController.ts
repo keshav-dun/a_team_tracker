@@ -74,13 +74,17 @@ export const markAsRead = async (
       { _id: id, userId },
       { isRead: true },
       { new: true }
-    );
+    )
+      .populate('sourceUserId', '_id name')
+      .lean();
 
     if (!notification) {
       throw Errors.notFound('Notification not found.');
     }
 
-    res.json({ success: true, data: notification });
+    // Map sourceUserId → sourceUser to match the same shape as getNotifications
+    const { sourceUserId, ...rest } = notification as Record<string, unknown>;
+    res.json({ success: true, data: { ...rest, sourceUser: sourceUserId } });
   } catch (error) {
     next(error);
   }

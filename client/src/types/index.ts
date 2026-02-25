@@ -225,9 +225,28 @@ export interface WorkbotToolCall {
   params: Record<string, unknown>;
 }
 
+/** Common optional fields shared by all WorkbotAction shapes */
+interface WorkbotActionBase {
+  note?: string;
+  filterByCurrentStatus?: 'office' | 'leave' | 'wfh';
+  referenceUser?: string;
+  referenceCondition?: 'present' | 'absent';
+}
+
+/**
+ * WorkbotAction enforces an XOR: at least one of toolCall or dateExpressions
+ * must be present.  The union is split so TypeScript prevents shapes where
+ * both are omitted.
+ */
 export type WorkbotAction =
-  | { type: 'set'; status: WorkbotStatus; toolCall?: WorkbotToolCall; dateExpressions?: string[]; note?: string; filterByCurrentStatus?: 'office' | 'leave' | 'wfh'; referenceUser?: string; referenceCondition?: 'present' | 'absent' }
-  | { type: 'clear'; toolCall?: WorkbotToolCall; dateExpressions?: string[]; note?: string; filterByCurrentStatus?: 'office' | 'leave' | 'wfh'; referenceUser?: string; referenceCondition?: 'present' | 'absent' };
+  // 'set' with toolCall (dateExpressions optional)
+  | { type: 'set'; status: WorkbotStatus; toolCall: WorkbotToolCall; dateExpressions?: string[] } & WorkbotActionBase
+  // 'set' with dateExpressions (toolCall optional)
+  | { type: 'set'; status: WorkbotStatus; dateExpressions: string[]; toolCall?: WorkbotToolCall } & WorkbotActionBase
+  // 'clear' with toolCall (dateExpressions optional)
+  | { type: 'clear'; toolCall: WorkbotToolCall; dateExpressions?: string[] } & WorkbotActionBase
+  // 'clear' with dateExpressions (toolCall optional)
+  | { type: 'clear'; dateExpressions: string[]; toolCall?: WorkbotToolCall } & WorkbotActionBase;
 
 export interface WorkbotPlan {
   actions: WorkbotAction[];

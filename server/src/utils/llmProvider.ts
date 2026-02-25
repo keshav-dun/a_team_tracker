@@ -38,6 +38,13 @@ export interface LLMCallOptions {
 export type LLMProvider = 'openrouter' | 'nvidia' | 'race';
 
 /* ------------------------------------------------------------------ */
+/*  Race-mode telemetry counters                                      */
+/* ------------------------------------------------------------------ */
+
+/** Simple in-process counters for race-mode usage. */
+const raceMetrics = { invocations: 0, successes: 0, failures: 0 };
+
+/* ------------------------------------------------------------------ */
 /*  Model lists                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -295,6 +302,13 @@ async function callRace(opts: LLMCallOptions): Promise<string> {
   const raceAbort = new AbortController();
   const raceStart = Date.now();
 
+  // Telemetry: track every race invocation so ops can monitor cost / rate-limit pressure
+  raceMetrics.invocations++;
+  console.warn(
+    `[${logPrefix}] ⚠ [race] Both providers will be called — ` +
+    `hasNvidia=${hasNvidia}, hasOpenRouter=${hasOpenRouter} (invocation #${raceMetrics.invocations})`,
+  );
+
   console.log(`[${logPrefix}] 🏁 [race] Firing NVIDIA + OpenRouter in parallel…`);
 
   try {
@@ -303,21 +317,27 @@ async function callRace(opts: LLMCallOptions): Promise<string> {
     const result = await Promise.any([
       callSingleProvider('nvidia', opts, raceAbort).then((answer) => {
         raceAbort.abort(); // cancel the loser
-        console.log(`[${logPrefix}] 🏆 [race] Winner: NVIDIA (${Date.now() - raceStart}ms)`);
+        const elapsed = Date.now() - raceStart;
+        raceMetrics.successes++;
+        console.log(`[${logPrefix}] 🏆 [race] Winner: NVIDIA (${elapsed}ms) [total races: ${raceMetrics.invocations}, successes: ${raceMetrics.successes}]`);
         return answer;
       }),
       callSingleProvider('openrouter', opts, raceAbort).then((answer) => {
         raceAbort.abort(); // cancel the loser
-        console.log(`[${logPrefix}] 🏆 [race] Winner: OpenRouter (${Date.now() - raceStart}ms)`);
+        const elapsed = Date.now() - raceStart;
+        raceMetrics.successes++;
+        console.log(`[${logPrefix}] 🏆 [race] Winner: OpenRouter (${elapsed}ms) [total races: ${raceMetrics.invocations}, successes: ${raceMetrics.successes}]`);
         return answer;
       }),
     ]);
     return result;
   } catch (aggErr) {
     // Both providers failed
+    const elapsed = Date.now() - raceStart;
+    raceMetrics.failures++;
     const errors = (aggErr as AggregateError)?.errors ?? [aggErr];
     const summary = errors.map((e: unknown) => (e instanceof Error ? e.message : String(e))).join(' | ');
-    console.log(`[${logPrefix}] ✗ [race] Both providers failed after ${Date.now() - raceStart}ms: ${summary}`);
+    console.log(`[${logPrefix}] ✗ [race] Both providers failed after ${elapsed}ms: ${summary} [total races: ${raceMetrics.invocations}, failures: ${raceMetrics.failures}]`);
     throw new Error(`All LLM providers failed (race mode). Errors: ${summary}`);
   }
 }

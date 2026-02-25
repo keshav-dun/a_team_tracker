@@ -13,15 +13,29 @@ const parseSchema = z.object({
   command: z.string().min(1).max(1000),
 });
 
+const toolCallSchema = z.object({
+  tool: z.string().min(1),
+  params: z.record(z.string(), z.unknown()),
+});
+
 const scheduleActionSchema = z.object({
   type: z.enum(['set', 'clear']),
   status: z.enum(['office', 'leave']).optional(),
-  dateExpressions: z.array(z.string().min(1)).min(1),
+  dateExpressions: z.array(z.string().min(1)).min(1).optional(),
+  toolCall: toolCallSchema.optional(),
   note: z.string().max(MAX_NOTE_LENGTH).optional(),
   filterByCurrentStatus: z.enum(['office', 'leave', 'wfh']).optional(),
   referenceUser: z.string().max(100).optional(),
   referenceCondition: z.enum(['present', 'absent']).optional(),
 }).superRefine((data, ctx) => {
+  // XOR: at least one of toolCall or dateExpressions must be present
+  if (!data.toolCall && (!data.dateExpressions || data.dateExpressions.length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['toolCall'],
+      message: 'At least one of "toolCall" or "dateExpressions" must be provided',
+    });
+  }
   if (data.type === 'clear' && data.filterByCurrentStatus !== undefined) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
