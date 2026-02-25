@@ -38,10 +38,13 @@ const scheduleActionSchema = z.object({
   status: z.enum(['office', 'leave']).optional(),
   dateExpressions: z.array(z.string().min(1)).min(1).optional(),
   toolCall: toolCallSchema.optional(),
-  note: z.string().max(MAX_NOTE_LENGTH).optional(),
-  filterByCurrentStatus: z.enum(['office', 'leave', 'wfh']).optional(),
-  referenceUser: z.string().max(100).optional(),
-  referenceCondition: z.enum(['present', 'absent']).optional(),
+  note: z.string().max(MAX_NOTE_LENGTH).nullable().optional(),
+  filterByCurrentStatus: z.enum(['office', 'leave', 'wfh']).nullable().optional(),
+  referenceUser: z.string().max(100).nullable().optional(),
+  referenceCondition: z.enum(['present', 'absent']).nullable().optional(),
+  leaveDuration: z.enum(['full', 'half']).nullable().optional(),
+  halfDayPortion: z.enum(['first-half', 'second-half']).nullable().optional(),
+  workingPortion: z.enum(['wfh', 'office']).nullable().optional(),
 }).superRefine((data, ctx) => {
   // Inclusive OR: at least one of toolCall or dateExpressions must be present
   // (dateExpressions.min(1) already rejects empty arrays, so we only
@@ -137,9 +140,30 @@ const applySchema = z.object({
 /*  Validation middleware factory                                     */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Recursively strip null values from an object/array before Zod validation.
+ * LLMs often emit explicit `null` for optional fields instead of omitting them.
+ * Converting null → undefined lets `.optional()` work correctly.
+ */
+function stripNulls(obj: unknown): unknown {
+  if (obj === null) return undefined;
+  if (Array.isArray(obj)) return obj.map(stripNulls);
+  if (typeof obj === 'object' && obj !== null) {
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(obj)) {
+      const stripped = stripNulls(val);
+      if (stripped !== undefined) cleaned[key] = stripped;
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
 function validate(schema: z.ZodSchema) {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
-    const result = schema.safeParse(req.body);
+    // Pre-process: strip null values that LLMs emit for optional fields
+    const sanitized = stripNulls(req.body);
+    const result = schema.safeParse(sanitized);
     if (!result.success) {
       const messages = result.error.issues.map(
         (i) => `${i.path.join('.')}: ${i.message}`

@@ -175,23 +175,31 @@ Status-aware filtering rules:
 - Only include filterByCurrentStatus when the user explicitly references their current schedule status. Do NOT add it for generic commands like "clear next week" or "set next month as office"
 
 Output format (JSON only):
+
+CRITICAL JSON RULES:
+- NEVER set any field to null. If a field does not apply, OMIT it entirely from the JSON.
+- Only include fields that have meaningful values.
+- Setting a field to null will cause a validation error.
+
 {
   "actions": [
     {
       "type": "set" or "clear",
-      "status": "office" or "leave" (only when type is "set"),
-      "toolCall": { "tool": "<tool_name>", "params": { ... } },
-      "note": "optional note",
-      "leaveDuration": "half" (only for half-day leave),
-      "halfDayPortion": "first-half" or "second-half" (only for half-day leave),
-      "workingPortion": "wfh" or "office" (only for half-day leave, default: "wfh"),
-      "filterByCurrentStatus": "office" or "leave" or "wfh" (only when user references existing statuses),
-      "referenceUser": "other person's name (ONLY when referencing their schedule as a filter for YOUR dates)",
-      "referenceCondition": "present" or "absent" (required when referenceUser is set)
+      "status": "office" or "leave" (required when type is "set", omit when type is "clear"),
+      "toolCall": { "tool": "<tool_name>", "params": { ... } }
     }
   ],
   "summary": "Brief human-readable summary of what will happen"
 }
+
+Optional fields — include ONLY when they have a real value, otherwise OMIT entirely:
+- "note": string (only if the user provides a note/reason)
+- "leaveDuration": "half" (only for half-day leave)
+- "halfDayPortion": "first-half" or "second-half" (only for half-day leave)
+- "workingPortion": "wfh" or "office" (only for half-day leave, default: "wfh")
+- "filterByCurrentStatus": "office" or "leave" or "wfh" (only when user references existing statuses)
+- "referenceUser": string (ONLY when referencing another person's schedule as a filter for YOUR dates)
+- "referenceCondition": "present" or "absent" (required when referenceUser is set)
 
 IMPORTANT: Do NOT include "targetUser" in the output unless the command explicitly asks to modify another person's schedule (e.g. "update Bala's schedule"). For reference-based filtering (marking YOUR days based on someone else's attendance), use referenceUser inside the action instead.
 
@@ -823,6 +831,19 @@ export const parseCommand = async (
       throw Errors.unprocessableEntity(
         `Could not understand the command. Please try rephrasing it. [raw: ${llmResponse.substring(0, 500)}]`,
       );
+    }
+
+    // Sanitize LLM output: strip null values from actions to prevent Zod
+    // validation failures (LLMs often emit explicit null for optional fields)
+    if (plan.actions && Array.isArray(plan.actions)) {
+      for (const action of plan.actions) {
+        const rec = action as unknown as Record<string, unknown>;
+        for (const key of Object.keys(rec)) {
+          if (rec[key] === null) {
+            delete rec[key];
+          }
+        }
+      }
     }
 
     // Validate plan structure
