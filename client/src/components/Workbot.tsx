@@ -157,7 +157,7 @@ const Workbot: React.FC<WorkbotProps> = ({ onBack }) => {
 
         const [resolveRes] = await Promise.all([
           workbotApi.resolve(plan.actions as WorkbotAction[]),
-          advanceStepsTo(2, 3, 500),         // step 2→3 animates while API runs
+          advanceStepsTo(2, 4, 500),         // step 2→4 so step 3 can show 'done' tick
         ]);
 
         const resolved = resolveRes.data.data;
@@ -173,6 +173,9 @@ const Workbot: React.FC<WorkbotProps> = ({ onBack }) => {
           selected: c.valid,
         }));
         setChanges(withSelection);
+
+        // Brief pause so user sees all checkmarks before switching view
+        await new Promise((r) => setTimeout(r, 350));
         setPhase('preview');
       } catch (err: unknown) {
         const backendMsg = extractErrorMsg(err);
@@ -208,11 +211,13 @@ const Workbot: React.FC<WorkbotProps> = ({ onBack }) => {
       }));
       const [res] = await Promise.all([
         workbotApi.apply(items),
-        advanceStepsTo(0, 1, 500),         // step 0→1 animates while API runs
+        advanceStepsTo(0, 2, 500),         // step 0→2 so step 1 can show 'done' tick
       ]);
       const result = res.data?.data;
       if (result) {
         setApplyResult(result);
+        // Brief pause so user sees all checkmarks before switching view
+        await new Promise((r) => setTimeout(r, 350));
         setPhase('done');
       } else {
         console.error('Workbot apply: unexpected response shape', res.data);
@@ -443,7 +448,7 @@ const Workbot: React.FC<WorkbotProps> = ({ onBack }) => {
                       <WorkbotThinkingStep
                         icon="✅"
                         text="Preparing preview of changes"
-                        status={activeStep > 3 ? 'done' : 'active'}
+                        status={activeStep >= 4 ? 'done' : 'active'}
                       />
                     )}
                   </>
@@ -459,7 +464,7 @@ const Workbot: React.FC<WorkbotProps> = ({ onBack }) => {
                       <WorkbotThinkingStep
                         icon="💾"
                         text="Saving to your calendar"
-                        status={activeStep > 1 ? 'done' : 'active'}
+                        status={activeStep >= 2 ? 'done' : 'active'}
                       />
                     )}
                   </>

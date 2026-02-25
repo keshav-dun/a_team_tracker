@@ -38,13 +38,13 @@ const scheduleActionSchema = z.object({
   status: z.enum(['office', 'leave']).optional(),
   dateExpressions: z.array(z.string().min(1)).min(1).optional(),
   toolCall: toolCallSchema.optional(),
-  note: z.string().max(MAX_NOTE_LENGTH).nullable().optional(),
-  filterByCurrentStatus: z.enum(['office', 'leave', 'wfh']).nullable().optional(),
-  referenceUser: z.string().max(100).nullable().optional(),
-  referenceCondition: z.enum(['present', 'absent']).nullable().optional(),
-  leaveDuration: z.enum(['full', 'half']).nullable().optional(),
-  halfDayPortion: z.enum(['first-half', 'second-half']).nullable().optional(),
-  workingPortion: z.enum(['wfh', 'office']).nullable().optional(),
+  note: z.string().max(MAX_NOTE_LENGTH).optional(),
+  filterByCurrentStatus: z.enum(['office', 'leave', 'wfh']).optional(),
+  referenceUser: z.string().max(100).optional(),
+  referenceCondition: z.enum(['present', 'absent']).optional(),
+  leaveDuration: z.enum(['full', 'half']).optional(),
+  halfDayPortion: z.enum(['first-half', 'second-half']).optional(),
+  workingPortion: z.enum(['wfh', 'office']).optional(),
 }).superRefine((data, ctx) => {
   // Inclusive OR: at least one of toolCall or dateExpressions must be present
   // (dateExpressions.min(1) already rejects empty arrays, so we only
@@ -56,7 +56,7 @@ const scheduleActionSchema = z.object({
       message: 'At least one of "toolCall" or "dateExpressions" must be provided',
     });
   }
-  if (data.type === 'clear' && data.filterByCurrentStatus !== undefined) {
+  if (data.type === 'clear' && data.filterByCurrentStatus != null) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['filterByCurrentStatus'],
@@ -147,8 +147,8 @@ const applySchema = z.object({
  */
 function stripNulls(obj: unknown): unknown {
   if (obj === null) return undefined;
-  if (Array.isArray(obj)) return obj.map(stripNulls);
-  if (typeof obj === 'object' && obj !== null) {
+  if (Array.isArray(obj)) return obj.map(stripNulls).filter((v) => v !== undefined);
+  if (typeof obj === 'object') {
     const cleaned: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(obj)) {
       const stripped = stripNulls(val);

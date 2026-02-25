@@ -16,9 +16,12 @@ import { callLLMProvider } from '../utils/llmProvider.js';
 import {
   executeDateTool,
   executeDateTools,
+  executeDatePipeline,
   getToolSchemaPrompt,
   type DateToolCall,
   type DateToolResult,
+  type DateModifier,
+  type DatePipelineResult,
 } from '../utils/dateTools.js';
 
 /* ------------------------------------------------------------------ */
@@ -32,6 +35,8 @@ interface ScheduleAction {
   dateExpressions?: string[];
   /** Agent-style tool call for date resolution (new preferred path). */
   toolCall?: DateToolCall;
+  /** Pipeline modifiers to filter/exclude dates after generation (v2). */
+  modifiers?: DateModifier[];
   note?: string;
   leaveDuration?: 'full' | 'half';
   halfDayPortion?: 'first-half' | 'second-half';
@@ -88,6 +93,38 @@ function sanitise(input: string): string {
 }
 
 /**
+ * Recursively strip null values from objects and arrays.
+ * - Object keys with null values are deleted.
+ * - Null elements inside arrays are removed.
+ * - Primitives pass through unchanged.
+ * Operates in-place on objects/arrays and also returns the cleaned value.
+ */
+function sanitizeDeep(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return undefined;
+  if (Array.isArray(obj)) {
+    // Remove null/undefined elements, recurse into remaining
+    const cleaned: unknown[] = [];
+    for (const item of obj) {
+      const v = sanitizeDeep(item);
+      if (v !== undefined) cleaned.push(v);
+    }
+    return cleaned;
+  }
+  if (typeof obj === 'object') {
+    const rec = obj as Record<string, unknown>;
+    for (const key of Object.keys(rec)) {
+      if (rec[key] === null || rec[key] === undefined) {
+        delete rec[key];
+      } else {
+        rec[key] = sanitizeDeep(rec[key]);
+      }
+    }
+    return rec;
+  }
+  return obj; // string, number, boolean — pass through
+}
+
+/**
  * Call LLM to parse a natural-language scheduling command into a structured plan.
  * Uses separate system and user messages to prevent prompt injection.
  * Delegates to the centralized LLM provider.
@@ -131,6 +168,14 @@ Rules:
 
 ${toolSchemas}
 
+PERIOD RESOLUTION (CRITICAL — read carefully):
+- "this_month" = the current calendar month (the month containing today's date ${todayStr})
+- "next_month" = the calendar month AFTER the current one
+- When the user says "next month", ALWAYS use period: "next_month"
+- When the user says "this month", ALWAYS use period: "this_month"
+- If no month is explicitly specified and the command mentions date numbers (e.g. "5th to 25th", "first 10 days"), default to "next_month" since users typically schedule future dates
+- NEVER use "this_month" when the user explicitly says "next month" — this is a critical error
+
 Third-party detection rules:
 - This tool is ONLY for updating the current user's OWN schedule
 - The current user's name is "${userName}". If the command mentions the current user's own name (or any part of it like first name or last name), treat it as a self-reference — do NOT set targetUser
@@ -147,17 +192,56 @@ Third-party detection rules:
 Examples of toolCall usage:
 - "Mark first 2 weeks of next month as office" → toolCall: { "tool": "expand_weeks", "params": { "period": "next_month", "count": 2, "position": "first" } }
 - "Mark last week of next month as office" → toolCall: { "tool": "expand_weeks", "params": { "period": "next_month", "count": 1, "position": "last" } }
+- "Mark the second week of next month as office" → toolCall: { "tool": "expand_specific_weeks", "params": { "period": "next_month", "weeks": [2] } }
+- "Mark weeks 2 and 3 of next month" → toolCall: { "tool": "expand_specific_weeks", "params": { "period": "next_month", "weeks": [2, 3] } }
 - "Mark every Monday next month as office" → toolCall: { "tool": "expand_day_of_week", "params": { "period": "next_month", "day": "monday" } }
 - "Mark first 10 working days of next month" → toolCall: { "tool": "expand_working_days", "params": { "period": "next_month", "count": 10, "position": "first" } }
 - "Mark entire next week as office" → toolCall: { "tool": "expand_week_period", "params": { "week": "next_week" } }
 - "Mark every alternate day next month" → toolCall: { "tool": "expand_alternate", "params": { "period": "next_month", "type": "calendar" } }
+- "Mark alternate weekdays next month" → toolCall: { "tool": "expand_alternate", "params": { "period": "next_month", "type": "working" } }
+  ("alternate weekdays" / "every other working day" → type: "working". "alternate days" / "every other day" → type: "calendar")
 - "Mark first weekday of each week next month" → toolCall: { "tool": "expand_first_weekday_per_week", "params": { "period": "next_month" } }
+- "Mark last working day of each week next month" → toolCall: { "tool": "expand_last_weekday_per_week", "params": { "period": "next_month" } }
+- "Mark every third day next month" → toolCall: { "tool": "expand_every_nth", "params": { "period": "next_month", "n": 3 } }
+- "Mark every 5th day starting from the 1st" → toolCall: { "tool": "expand_every_nth", "params": { "period": "next_month", "n": 5, "start_day": 1 } }
+- "Mark all even-numbered dates next month" → toolCall: { "tool": "expand_every_nth", "params": { "period": "next_month", "n": 2, "start_day": 2 } }
 - "Mark all days except Fridays next month" → toolCall: { "tool": "expand_except", "params": { "period": "next_month", "exclude_day": "friday" } }
 - "Mark first half of next month" → toolCall: { "tool": "expand_half_month", "params": { "period": "next_month", "half": "first" } }
 - "Mark days 5th to 20th of next month" → toolCall: { "tool": "expand_range", "params": { "period": "next_month", "start_day": 5, "end_day": 20 } }
 - "Mark every day next month as office where Rahul is coming" → toolCall: { "tool": "expand_month", "params": { "period": "next_month" } }, referenceUser: "Rahul", referenceCondition: "present"
 - "Set tomorrow as leave" → toolCall: { "tool": "resolve_dates", "params": { "dates": ["tomorrow"] } }
 - "Mark next Monday and Wednesday as office" → toolCall: { "tool": "resolve_dates", "params": { "dates": ["next Monday", "next Wednesday"] } }
+- "Mark every weekend next month" → toolCall: { "tool": "expand_weekends", "params": { "period": "next_month" } }
+- "After the first Monday next month" → toolCall: { "tool": "expand_anchor_range", "params": { "period": "next_month", "anchor_day": "monday", "anchor_occurrence": 1, "direction": "after" } }
+- "Between first Monday and last Friday next month" → toolCall: { "tool": "expand_anchor_range", "params": { "period": "next_month", "anchor_day": "monday", "anchor_occurrence": 1, "direction": "between", "end_day": "friday", "end_occurrence": -1 } }
+- "First half except Fridays" → toolCall: { "tool": "expand_half_except_day", "params": { "period": "next_month", "half": "first", "exclude_day": "friday" } }
+- "Mon-Wed in first 3 weeks" → toolCall: { "tool": "expand_range_days_of_week", "params": { "period": "next_month", "start_day": 1, "end_day": 21, "days": ["monday", "tuesday", "wednesday"] } }
+- "First 10 working days except Mondays" → toolCall: { "tool": "expand_n_working_days_except", "params": { "period": "next_month", "count": 10, "position": "first", "exclude_days": ["monday"] } }
+- "First Wednesday and last Thursday" → toolCall: { "tool": "expand_ordinal_day_of_week", "params": { "period": "next_month", "ordinals": [{ "ordinal": 1, "day": "wednesday" }, { "ordinal": -1, "day": "thursday" }] } }
+- "Entire month except the second week" → toolCall: { "tool": "expand_month_except_weeks", "params": { "period": "next_month", "exclude_weeks": [2] } }
+
+Examples of toolCall + modifiers (for complex commands ONLY when no composite tool fits):
+- "All days next month except the first week" →
+  toolCall: { "tool": "expand_month", "params": { "period": "next_month" } },
+  modifiers: [{ "type": "exclude_range", "params": { "start_day": 1, "end_day": 7 } }]
+- "All weekdays next month except Wednesdays and Fridays" →
+  toolCall: { "tool": "expand_month", "params": { "period": "next_month" } },
+  modifiers: [{ "type": "exclude_days_of_week", "params": { "days": ["wednesday", "friday"] } }]
+- "Mon-Wed each week next month" →
+  toolCall: { "tool": "expand_month", "params": { "period": "next_month" } },
+  modifiers: [{ "type": "filter_days_of_week", "params": { "days": ["monday", "tuesday", "wednesday"] } }]
+- "All working days except public holidays" →
+  toolCall: { "tool": "expand_month", "params": { "period": "next_month" } },
+  modifiers: [{ "type": "exclude_holidays", "params": {} }]
+- "First two weekdays of every week" →
+  toolCall: { "tool": "expand_month", "params": { "period": "next_month" } },
+  modifiers: [{ "type": "filter_weekday_slice", "params": { "count": 2, "position": "first" } }]
+PREFER composite tools over modifier chains when a composite tool fits exactly:
+- "First 10 working days except Mondays" → use expand_n_working_days_except (NOT expand_working_days + modifier)
+- "First half except Fridays" → use expand_half_except_day (NOT expand_half_month + modifier)
+- "Entire month except second week" → use expand_month_except_weeks (NOT expand_month + modifier)
+- "Mon-Wed in first 3 weeks" → use expand_range_days_of_week (NOT expand_multiple_days_of_week)
+Only use modifiers when no composite or single tool can handle the command alone.
 
 Half-day leave rules:
 - If the user says "half day leave", "half-day leave", "half day off", or similar, set leaveDuration to "half"
@@ -200,6 +284,10 @@ Optional fields — include ONLY when they have a real value, otherwise OMIT ent
 - "filterByCurrentStatus": "office" or "leave" or "wfh" (only when user references existing statuses)
 - "referenceUser": string (ONLY when referencing another person's schedule as a filter for YOUR dates)
 - "referenceCondition": "present" or "absent" (required when referenceUser is set)
+- "modifiers": array of modifier objects (ONLY for complex commands with exclusions/filters that go beyond a single tool)
+  Each modifier: { "type": "<modifier_type>", "params": { ... } }
+  Available types: exclude_dates, exclude_days_of_week, exclude_range, exclude_weeks, exclude_working_days_count, exclude_holidays, filter_days_of_week, filter_range, filter_weekday_slice
+  See tool schema for full modifier documentation.
 
 IMPORTANT: Do NOT include "targetUser" in the output unless the command explicitly asks to modify another person's schedule (e.g. "update Bala's schedule"). For reference-based filtering (marking YOUR days based on someone else's attendance), use referenceUser inside the action instead.
 
@@ -833,16 +921,11 @@ export const parseCommand = async (
       );
     }
 
-    // Sanitize LLM output: strip null values from actions to prevent Zod
-    // validation failures (LLMs often emit explicit null for optional fields)
-    if (plan.actions && Array.isArray(plan.actions)) {
+    // Sanitize LLM output: recursively strip null values from actions to prevent
+    // Zod validation failures (LLMs often emit explicit null for optional fields)
+    if (Array.isArray(plan.actions)) {
       for (const action of plan.actions) {
-        const rec = action as unknown as Record<string, unknown>;
-        for (const key of Object.keys(rec)) {
-          if (rec[key] === null) {
-            delete rec[key];
-          }
-        }
+        sanitizeDeep(action);
       }
     }
 
@@ -901,6 +984,11 @@ export const resolvePlan = async (
       return;
     }
 
+    // Defense-in-depth: recursively strip any residual nulls from inbound actions
+    for (const action of actions) {
+      sanitizeDeep(action);
+    }
+
     const todayStr = getTodayString();
     const isAdmin = req.user.role === 'admin';
     const userId = req.user._id;
@@ -943,34 +1031,86 @@ export const resolvePlan = async (
           }
         } else {
           // Agent path: execute the tool directly
-          let result: DateToolResult;
-          try {
-            result = executeDateTool(action.toolCall, todayStr);
-          } catch (toolErr) {
-            console.warn(`[Workbot] Tool "${action.toolCall.tool}" threw: ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`);
-            result = { success: false, dates: [], description: '', error: String(toolErr) };
+          // Sanitize params before execution to prevent null-related errors
+          if (action.toolCall.params) {
+            action.toolCall.params = sanitizeDeep(action.toolCall.params) as Record<string, unknown>;
           }
-          if (result.success) {
-            dates = result.dates;
-            console.log(`[Workbot] Tool "${action.toolCall.tool}" resolved ${dates.length} dates`);
+
+          // Sanitize modifiers if present
+          const modifiers = Array.isArray(action.modifiers)
+            ? (action.modifiers.map(m => sanitizeDeep(m)) as DateModifier[]).filter(Boolean)
+            : [];
+
+          // Build holiday context for exclude_holidays modifier
+          const pipelineContext = { holidays: Array.from(holidaySet) };
+
+          if (modifiers.length > 0) {
+            // Pipeline path: generator + modifiers
+            let pipelineResult: DatePipelineResult;
+            try {
+              pipelineResult = executeDatePipeline(action.toolCall, modifiers, todayStr, pipelineContext);
+            } catch (pipeErr) {
+              console.warn(`[Workbot] Pipeline for "${action.toolCall.tool}" threw: ${pipeErr instanceof Error ? pipeErr.message : String(pipeErr)}`);
+              pipelineResult = {
+                success: false, dates: [], description: '',
+                generatorResult: { success: false, dates: [], description: '', error: String(pipeErr) },
+                modifierErrors: [],
+              };
+            }
+            if (pipelineResult.success) {
+              dates = pipelineResult.dates;
+              console.log(`[Workbot] Pipeline "${action.toolCall.tool}" + ${modifiers.length} modifier(s) → ${dates.length} dates`);
+              if (pipelineResult.modifierErrors.length > 0) {
+                console.warn(`[Workbot] Modifier warnings: ${pipelineResult.modifierErrors.join('; ')}`);
+              }
+            } else {
+              console.warn(`[Workbot] Pipeline "${action.toolCall.tool}" failed: ${pipelineResult.generatorResult.error}. Attempting fallback.`);
+              const synthesized = synthesizeDateExpression(action.toolCall);
+              if (synthesized) {
+                console.log(`[Workbot] Synthesized expression from toolCall: "${synthesized}"`);
+                dates = resolveDateExpressions([synthesized], todayStr);
+              }
+              if (dates.length === 0 && action.dateExpressions && action.dateExpressions.length > 0) {
+                dates = resolveDateExpressions(action.dateExpressions, todayStr);
+              }
+              if (dates.length === 0) {
+                console.warn(`[Workbot] Pipeline "${action.toolCall.tool}" failed and no fallback resolved dates.`);
+                actionsWithDates.push({ action, dates: [] });
+                allResolvedDates.push(...dates);
+                continue;
+              }
+            }
           } else {
-            console.warn(`[Workbot] Tool "${action.toolCall.tool}" failed: ${result.error}. Attempting fallback.`);
-            // Try to synthesize a human-readable date expression from toolCall params
-            const synthesized = synthesizeDateExpression(action.toolCall);
-            if (synthesized) {
-              console.log(`[Workbot] Synthesized expression from toolCall: "${synthesized}"`);
-              dates = resolveDateExpressions([synthesized], todayStr);
+            // Simple tool path (no modifiers)
+            let result: DateToolResult;
+            try {
+              result = executeDateTool(action.toolCall, todayStr);
+            } catch (toolErr) {
+              console.warn(`[Workbot] Tool "${action.toolCall.tool}" threw: ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`);
+              result = { success: false, dates: [], description: '', error: String(toolErr) };
             }
-            // If synthesis produced no dates, try explicit dateExpressions
-            if (dates.length === 0 && action.dateExpressions && action.dateExpressions.length > 0) {
-              dates = resolveDateExpressions(action.dateExpressions, todayStr);
-            }
-            // If still no dates, surface error instead of silently returning empty
-            if (dates.length === 0) {
-              console.warn(`[Workbot] Tool "${action.toolCall.tool}" failed and no fallback resolved dates.`);
-              actionsWithDates.push({ action, dates: [] });
-              allResolvedDates.push(...dates);
-              continue;
+            if (result.success) {
+              dates = result.dates;
+              console.log(`[Workbot] Tool "${action.toolCall.tool}" resolved ${dates.length} dates`);
+            } else {
+              console.warn(`[Workbot] Tool "${action.toolCall.tool}" failed: ${result.error}. Attempting fallback.`);
+              // Try to synthesize a human-readable date expression from toolCall params
+              const synthesized = synthesizeDateExpression(action.toolCall);
+              if (synthesized) {
+                console.log(`[Workbot] Synthesized expression from toolCall: "${synthesized}"`);
+                dates = resolveDateExpressions([synthesized], todayStr);
+              }
+              // If synthesis produced no dates, try explicit dateExpressions
+              if (dates.length === 0 && action.dateExpressions && action.dateExpressions.length > 0) {
+                dates = resolveDateExpressions(action.dateExpressions, todayStr);
+              }
+              // If still no dates, surface error instead of silently returning empty
+              if (dates.length === 0) {
+                console.warn(`[Workbot] Tool "${action.toolCall.tool}" failed and no fallback resolved dates.`);
+                actionsWithDates.push({ action, dates: [] });
+                allResolvedDates.push(...dates);
+                continue;
+              }
             }
           }
         }
