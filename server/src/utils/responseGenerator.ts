@@ -156,16 +156,16 @@ function formatTrend(result: TrendResult): string {
 /* ------------------------------------------------------------------ */
 
 const LLM_MODELS = [
-  'deepseek/deepseek-r1-0528:free',
-  'meta-llama/llama-4-maverick:free',
+  'openai/gpt-oss-120b:free',
+  'arcee-ai/trinity-large-preview:free',
+  'stepfun/step-3.5-flash:free',
+  'z-ai/glm-4.5-air:free',
   'meta-llama/llama-3.3-70b-instruct:free',
-  'qwen/qwen3-235b-a22b:free',
   'google/gemma-3-27b-it:free',
-  'nvidia/llama-3.1-nemotron-70b-instruct:free',
-  'microsoft/phi-4-reasoning-plus:free',
+  'nvidia/nemotron-3-nano-30b-a3b:free',
+  'arcee-ai/trinity-mini:free',
   'google/gemma-3-12b-it:free',
   'nvidia/nemotron-nano-9b-v2:free',
-  'qwen/qwen3-32b:free',
 ];
 
 const LLM_FETCH_TIMEOUT_MS = 12_000;
