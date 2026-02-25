@@ -384,8 +384,10 @@ async function callLLM(messages: Array<{ role: string; content: string }>): Prom
   }
 
   let lastError = '';
+  const overallStart = Date.now();
 
   for (const model of LLM_MODELS) {
+    const modelStart = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), LLM_FETCH_TIMEOUT_MS);
     try {
@@ -411,12 +413,14 @@ async function callLLM(messages: Array<{ role: string; content: string }>): Prom
       if (res.status === 429) {
         await res.text(); // consume body to release socket
         lastError = `Rate limited (${model})`;
+        console.log(`[Chat:Extractor] ⚠ ${model} → 429 rate-limited (${Date.now() - modelStart}ms)`);
         continue;
       }
 
       if (!res.ok) {
         const body = await res.text();
         lastError = `${model} error ${res.status}: ${body.substring(0, 200)}`;
+        console.log(`[Chat:Extractor] ✗ ${model} → HTTP ${res.status} (${Date.now() - modelStart}ms)`);
         continue;
       }
 
@@ -427,18 +431,25 @@ async function callLLM(messages: Array<{ role: string; content: string }>): Prom
       const msg = data.choices?.[0]?.message;
       const answer = msg?.content?.trim() || msg?.reasoning_content?.trim() || msg?.reasoning?.trim() || '';
 
-      if (answer) return answer;
+      if (answer) {
+        console.log(`[Chat:Extractor] ✓ ${model} → success (${Date.now() - modelStart}ms, total ${Date.now() - overallStart}ms, ${answer.length} chars)`);
+        return answer;
+      }
       lastError = `Empty answer (${model})`;
+      console.log(`[Chat:Extractor] ✗ ${model} → empty response (${Date.now() - modelStart}ms)`);
     } catch (err: unknown) {
       clearTimeout(timer);
       if (err instanceof DOMException && err.name === 'AbortError') {
         lastError = `Timeout (${model})`;
+        console.log(`[Chat:Extractor] ✗ ${model} → timeout after ${LLM_FETCH_TIMEOUT_MS}ms`);
       } else {
         lastError = err instanceof Error ? err.message : String(err);
+        console.log(`[Chat:Extractor] ✗ ${model} → error: ${lastError} (${Date.now() - modelStart}ms)`);
       }
     }
   }
 
+  console.log(`[Chat:Extractor] ✗ All models failed after ${Date.now() - overallStart}ms. Last: ${lastError}`);
   throw new Error(`LLM extraction failed. Last error: ${lastError}`);
 }
 
@@ -571,6 +582,7 @@ export async function extractStructured(
     const parsed = JSON.parse(jsonStr);
 
     let intent: ComplexIntent = isValidComplexIntent(parsed.intent) ? parsed.intent : 'out_of_scope';
+    const llmIntent = intent;
 
     // If the LLM classified as out_of_scope, double-check with heuristic.
     // The LLM sometimes over-rejects future-period scheduling questions.
@@ -578,8 +590,11 @@ export async function extractStructured(
       const heuristicIntent = heuristicIntentFallback(question);
       if (heuristicIntent) {
         intent = heuristicIntent;
+        console.log(`[Chat:Extractor] Heuristic override: LLM said out_of_scope → ${heuristicIntent}`);
       }
     }
+
+    console.log(`[Chat:Extractor] Extracted: intent=${intent}${llmIntent !== intent ? ` (LLM: ${llmIntent})` : ''}, people=[${(parsed.people || []).join(', ')}], time="${parsed.timeRange || 'this month'}", goal=${parsed.optimizationGoal || 'none'}`);
 
     // Validate and normalize
     return {
@@ -596,10 +611,11 @@ export async function extractStructured(
       outOfScopeReason: intent === 'out_of_scope' ? (parsed.outOfScopeReason || undefined) : undefined,
     };
   } catch (err) {
-    console.error('LLM extraction parse error:', err);
+    console.error('[Chat:Extractor] LLM parse error:', err instanceof Error ? err.message : err);
     // Fallback: try heuristic before giving up
     const heuristicIntent = heuristicIntentFallback(question);
     if (heuristicIntent) {
+      console.log(`[Chat:Extractor] Heuristic fallback: intent=${heuristicIntent}, people=[${extractPeopleHeuristic(question).join(', ')}], time="${extractTimeRangeHeuristic(question)}"`);
       return {
         ...DEFAULT_EXTRACTION,
         intent: heuristicIntent,
@@ -608,6 +624,7 @@ export async function extractStructured(
         optimizationGoal: heuristicOptimizationGoal(question),
       };
     }
+    console.log('[Chat:Extractor] No heuristic match — returning out_of_scope');
     return { ...DEFAULT_EXTRACTION };
   }
 }
