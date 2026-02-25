@@ -535,11 +535,16 @@ function heuristicIntentFallback(question: string): ComplexIntent | null {
 /** Common pronouns that should be resolved from conversation history */
 const PRONOUNS = new Set(['him', 'her', 'them', 'they', 'he', 'she', 'that person', 'this person', 'the same person', 'same people']);
 
+/** Precompiled word-boundary regexes for each pronoun (built once at module load) */
+const PRONOUN_REGEXES: RegExp[] = [...PRONOUNS].map(
+  (p) => new RegExp(`\\b${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'),
+);
+
 /** Check if a question contains pronouns that need resolution */
 function containsPronouns(question: string): boolean {
   const q = question.toLowerCase();
-  for (const pronoun of PRONOUNS) {
-    if (new RegExp(`\\b${pronoun}\\b`).test(q)) return true;
+  for (const re of PRONOUN_REGEXES) {
+    if (re.test(q)) return true;
   }
   return false;
 }
@@ -564,6 +569,14 @@ function extractNamesFromHistory(history?: HistoryMessage[]): string[] {
     'week', 'month', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday',
     'saturday', 'sunday', 'overlap', 'attendance', 'schedule', 'team', 'best',
     'maximum', 'minimum', 'note', 'some', 'data', 'may', 'set', 'incomplete',
+    // Common sentence-starting / interrogative words
+    'what', 'which', 'when', 'where', 'who', 'whom', 'how', 'why',
+    'next', 'last', 'same', 'also', 'just', 'only', 'even', 'any', 'all',
+    'tell', 'show', 'give', 'find', 'list', 'get', 'check', 'compare',
+    'does', 'want', 'need', 'like', 'please', 'thanks', 'sure', 'okay',
+    // Month names (sentence-starting false positives)
+    'january', 'february', 'march', 'april', 'june', 'july',
+    'august', 'september', 'october', 'november', 'december',
   ]);
 
   for (const msg of history) {
@@ -625,13 +638,12 @@ function resolvePronounsFromHistory(question: string, history?: HistoryMessage[]
  * resolve from conversation history.
  */
 function resolvePronouns(people: string[], question: string, history?: HistoryMessage[]): string[] {
-  const PRONOUN_SET = new Set(['him', 'her', 'them', 'they', 'he', 'she', 'that person', 'this person']);
   const resolved = [...people];
   let needsResolution = false;
 
   // Check if any entry in people is a pronoun
   for (let i = 0; i < resolved.length; i++) {
-    if (PRONOUN_SET.has(resolved[i].toLowerCase())) {
+    if (PRONOUNS.has(resolved[i].toLowerCase())) {
       needsResolution = true;
       resolved.splice(i, 1); // remove the pronoun
       i--;
@@ -680,7 +692,8 @@ function extractPeopleHeuristic(question: string, history?: HistoryMessage[]): s
   // "with <name>"
   const withMatch = q.match(/\b(?:with|avoid|from)\s+([a-z]+)\b/);
   if (withMatch && !['the', 'a', 'my', 'this', 'that', 'it', 'them', 'him', 'her', 'office', 'leave'].includes(withMatch[1])) {
-    people.push(withMatch[1]);
+    const titleCased = withMatch[1].charAt(0).toUpperCase() + withMatch[1].slice(1);
+    people.push(titleCased);
   }
 
   // Resolve pronouns from conversation history
@@ -805,12 +818,14 @@ export async function extractStructured(
     // Fallback: try heuristic before giving up
     const heuristicIntent = heuristicIntentFallback(question);
     if (heuristicIntent) {
-      console.log(`[Chat:Extractor] Heuristic fallback: intent=${heuristicIntent}, people=[${extractPeopleHeuristic(question, history).join(', ')}], time="${extractTimeRangeHeuristic(question)}"`);
+      const people = extractPeopleHeuristic(question, history);
+      const timeRange = extractTimeRangeHeuristic(question);
+      console.log(`[Chat:Extractor] Heuristic fallback: intent=${heuristicIntent}, people=[${people.join(', ')}], time="${timeRange}"`);
       return {
         ...DEFAULT_EXTRACTION,
         intent: heuristicIntent,
-        people: extractPeopleHeuristic(question, history),
-        timeRange: extractTimeRangeHeuristic(question),
+        people,
+        timeRange,
         optimizationGoal: heuristicOptimizationGoal(question),
       };
     }

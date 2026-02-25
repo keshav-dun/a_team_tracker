@@ -117,6 +117,10 @@ const buildFavoriteMessage = (
       return `${sourceName} updated ${dateCount} ${dayWord}. Review your alignment.`;
     case 'removed':
       return `${sourceName} removed ${dateCount} ${dayWord}. You may want to update yours.`;
+    default: {
+      const _exhaustive: never = kind;
+      throw new Error(`Unhandled FavoriteChangeKind: ${_exhaustive}`);
+    }
   }
 };
 

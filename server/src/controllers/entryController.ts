@@ -84,6 +84,54 @@ const validateTimeWindow = (
   return null;
 };
 
+// ─── Favorite-notification helpers ─────────────────────────
+
+/**
+ * Classify what kind of favourite-schedule notification to send based on
+ * the previous and new status of an entry.
+ * Returns null when no notification is warranted (e.g. leave → leave).
+ */
+const determineFavChangeKind = (
+  previousStatus: string | null,
+  newStatus: string,
+): FavoriteChangeKind | null => {
+  if (newStatus === 'office' && previousStatus !== 'office') return 'added';
+  if (newStatus === 'office' && previousStatus === 'office') return 'updated';
+  if (newStatus !== 'office' && previousStatus === 'office') return 'removed';
+  return null;
+};
+
+/**
+ * Group dates by change-kind using an existing-status lookup, then fire
+ * `createFavoriteNotifications` for each non-empty group.
+ * `getNewStatus` resolves the new status for a given date (handles cleared / per-date statuses).
+ */
+const dispatchBulkFavoriteNotifications = (
+  userId: string,
+  userName: string,
+  dates: string[],
+  existingStatusMap: Record<string, string>,
+  getNewStatus: (date: string) => string,
+): void => {
+  const groups: Record<FavoriteChangeKind, string[]> = {
+    added: [],
+    updated: [],
+    removed: [],
+  };
+
+  for (const d of dates) {
+    const kind = determineFavChangeKind(existingStatusMap[d] ?? null, getNewStatus(d));
+    if (kind) groups[kind].push(d);
+  }
+
+  for (const kind of Object.keys(groups) as FavoriteChangeKind[]) {
+    if (groups[kind].length > 0) {
+      createFavoriteNotifications(userId, userName, groups[kind], kind)
+        .catch((e) => console.error('createFavoriteNotifications error:', e));
+    }
+  }
+};
+
 /**
  * Set or update a day's status (office or leave), with optional time window & note.
  * PUT /api/entries
@@ -172,16 +220,8 @@ export const upsertEntry = async (
       console.error('notifyTeamStatusChange error:', pushErr);
     }
 
-    // Determine notification kind for favorites
-    let favKind: FavoriteChangeKind | null = null;
-    if (status === 'office' && previousStatus !== 'office') {
-      favKind = 'added';
-    } else if (status === 'office' && previousStatus === 'office') {
-      favKind = 'updated';
-    } else if (status !== 'office' && previousStatus === 'office') {
-      favKind = 'removed';
-    }
-
+    // Notify fans of the status change
+    const favKind = determineFavChangeKind(previousStatus, status);
     if (favKind) {
       createFavoriteNotifications(userId.toString(), req.user!.name, [date], favKind)
         .catch((favErr) => console.error('createFavoriteNotifications error:', favErr));
@@ -269,16 +309,8 @@ export const adminUpsertEntry = async (
       { upsert: true, new: true, runValidators: true }
     );
 
-    // Determine notification kind for favorites
-    let favKind: FavoriteChangeKind | null = null;
-    if (status === 'office' && previousStatus !== 'office') {
-      favKind = 'added';
-    } else if (status === 'office' && previousStatus === 'office') {
-      favKind = 'updated';
-    } else if (status !== 'office' && previousStatus === 'office') {
-      favKind = 'removed';
-    }
-
+    // Notify fans of the status change
+    const favKind = determineFavChangeKind(previousStatus, status);
     if (favKind) {
       createFavoriteNotifications(userId.toString(), targetUser.name, [date], favKind)
         .catch((favErr) => console.error('createFavoriteNotifications error:', favErr));
@@ -588,35 +620,15 @@ export const bulkSetEntries = async (
     const skipped = dates.filter((d: string) => !allowedDates.includes(d));
     skipped.forEach((d: string) => results.push({ date: d, success: false, message: 'Outside allowed range' }));
 
-    // Create favorite notifications based on actual status changes
+    // Notify fans of status changes
     const successDates = results.filter((r) => r.success).map((r) => r.date);
     if (successDates.length > 0) {
-      const addedDates: string[] = [];
-      const updatedDates: string[] = [];
-      const removedDates: string[] = [];
-
-      for (const d of successDates) {
-        const prev = existingStatusMap[d] ?? null;
-        if (status === 'office' && prev !== 'office') addedDates.push(d);
-        else if (status === 'office' && prev === 'office') updatedDates.push(d);
-        else if (status !== 'office' && prev === 'office') removedDates.push(d);
-        // 'clear' on a former office entry counts as removed (prev === 'office')
-      }
-
-      const userName = req.user!.name;
-      const uid = userId.toString();
-      if (addedDates.length > 0) {
-        createFavoriteNotifications(uid, userName, addedDates, 'added')
-          .catch((e) => console.error('createFavoriteNotifications error:', e));
-      }
-      if (updatedDates.length > 0) {
-        createFavoriteNotifications(uid, userName, updatedDates, 'updated')
-          .catch((e) => console.error('createFavoriteNotifications error:', e));
-      }
-      if (removedDates.length > 0) {
-        createFavoriteNotifications(uid, userName, removedDates, 'removed')
-          .catch((e) => console.error('createFavoriteNotifications error:', e));
-      }
+      // 'clear' maps to 'wfh' for classification purposes
+      const effectiveStatus = status === 'clear' ? 'wfh' : status;
+      dispatchBulkFavoriteNotifications(
+        userId.toString(), req.user!.name, successDates,
+        existingStatusMap, () => effectiveStatus,
+      );
     }
 
     res.json({
@@ -717,41 +729,18 @@ export const copyFromDate = async (
     const skipped = targetDates.filter((d: string) => !allowedTargets.includes(d));
     skipped.forEach((d: string) => results.push({ date: d, success: false, message: 'Outside allowed range' }));
 
-    // Create favorite notifications based on actual status changes
-    const successDates = results.filter((r) => r.success && !r.message?.includes('cleared')).map((r) => r.date);
-    const clearedDates = results.filter((r) => r.success && r.message?.includes('cleared')).map((r) => r.date);
+    // Notify fans of status changes
     const sourceStatus = sourceEntry?.status ?? 'wfh';
-
-    if (successDates.length > 0 || clearedDates.length > 0) {
-      const addedDates: string[] = [];
-      const updatedDates: string[] = [];
-      const removedDates: string[] = [];
-
-      for (const d of successDates) {
-        const prev = existingStatusMap[d] ?? null;
-        if (sourceStatus === 'office' && prev !== 'office') addedDates.push(d);
-        else if (sourceStatus === 'office' && prev === 'office') updatedDates.push(d);
-        else if (sourceStatus !== 'office' && prev === 'office') removedDates.push(d);
-      }
-      // Cleared dates that were previously office
-      for (const d of clearedDates) {
-        if (existingStatusMap[d] === 'office') removedDates.push(d);
-      }
-
-      const userName = req.user!.name;
-      const uid = userId.toString();
-      if (addedDates.length > 0) {
-        createFavoriteNotifications(uid, userName, addedDates, 'added')
-          .catch((e) => console.error('createFavoriteNotifications error:', e));
-      }
-      if (updatedDates.length > 0) {
-        createFavoriteNotifications(uid, userName, updatedDates, 'updated')
-          .catch((e) => console.error('createFavoriteNotifications error:', e));
-      }
-      if (removedDates.length > 0) {
-        createFavoriteNotifications(uid, userName, removedDates, 'removed')
-          .catch((e) => console.error('createFavoriteNotifications error:', e));
-      }
+    const allSuccessDates = results.filter((r) => r.success).map((r) => r.date);
+    if (allSuccessDates.length > 0) {
+      // Non-cleared dates adopt the source's status; cleared dates become 'wfh'
+      const clearedSet = new Set(
+        results.filter((r) => r.success && r.message?.includes('cleared')).map((r) => r.date),
+      );
+      dispatchBulkFavoriteNotifications(
+        userId.toString(), req.user!.name, allSuccessDates,
+        existingStatusMap, (d) => (clearedSet.has(d) ? 'wfh' : sourceStatus),
+      );
     }
 
     res.json({
@@ -873,34 +862,14 @@ export const repeatPattern = async (
       }
     }
 
-    // Create favorite notifications based on actual status changes
+    // Notify fans of status changes
     const successDates = results.filter((r) => r.success).map((r) => r.date);
     if (successDates.length > 0) {
-      const addedDates: string[] = [];
-      const updatedDates: string[] = [];
-      const removedDates: string[] = [];
-
-      for (const d of successDates) {
-        const prev = existingStatusMap[d] ?? null;
-        if (status === 'office' && prev !== 'office') addedDates.push(d);
-        else if (status === 'office' && prev === 'office') updatedDates.push(d);
-        else if (status !== 'office' && prev === 'office') removedDates.push(d);
-      }
-
-      const userName = req.user!.name;
-      const uid = userId.toString();
-      if (addedDates.length > 0) {
-        createFavoriteNotifications(uid, userName, addedDates, 'added')
-          .catch((e) => console.error('createFavoriteNotifications error:', e));
-      }
-      if (updatedDates.length > 0) {
-        createFavoriteNotifications(uid, userName, updatedDates, 'updated')
-          .catch((e) => console.error('createFavoriteNotifications error:', e));
-      }
-      if (removedDates.length > 0) {
-        createFavoriteNotifications(uid, userName, removedDates, 'removed')
-          .catch((e) => console.error('createFavoriteNotifications error:', e));
-      }
+      const effectiveStatus = status === 'clear' ? 'wfh' : status;
+      dispatchBulkFavoriteNotifications(
+        userId.toString(), req.user!.name, successDates,
+        existingStatusMap, () => effectiveStatus,
+      );
     }
 
     res.json({
@@ -973,18 +942,20 @@ export const copyRange = async (
     const end = new Date(sourceEnd + 'T00:00:00Z');
     const results: { date: string; success: boolean; message?: string; newStatus?: string }[] = [];
 
-    // Pre-compute all target dates to fetch existing entries
-    const allTargetDates: string[] = [];
+    // Pre-compute only the target dates that pass the allowed-date filter
+    const allowedTargetDates: string[] = [];
     {
       const tmp = new Date(sourceStart + 'T00:00:00Z');
       while (tmp <= end) {
-        const tgt = new Date(tmp.getTime() + offsetMs);
-        allTargetDates.push(toISTDateString(tgt));
+        const tgtDateStr = toISTDateString(new Date(tmp.getTime() + offsetMs));
+        if (isAdmin || isMemberAllowedDate(tgtDateStr)) {
+          allowedTargetDates.push(tgtDateStr);
+        }
         tmp.setDate(tmp.getDate() + 1);
       }
     }
-    const existingTargetEntries = allTargetDates.length > 0
-      ? await Entry.find({ userId, date: { $in: allTargetDates } }).select('date status').lean()
+    const existingTargetEntries = allowedTargetDates.length > 0
+      ? await Entry.find({ userId, date: { $in: allowedTargetDates } }).select('date status').lean()
       : [];
     const existingStatusMap: Record<string, string> = {};
     existingTargetEntries.forEach((e: any) => { existingStatusMap[e.date] = e.status; });
@@ -1043,35 +1014,17 @@ export const copyRange = async (
       current.setDate(current.getDate() + 1);
     }
 
-    // Create favorite notifications based on actual status changes
+    // Notify fans of status changes
     {
-      const addedDates: string[] = [];
-      const updatedDates: string[] = [];
-      const removedDates: string[] = [];
-
-      for (const r of results) {
-        if (!r.success) continue;
-        const prev = existingStatusMap[r.date] ?? null;
-        const newSt = r.newStatus ?? 'wfh'; // cleared = wfh
-
-        if (newSt === 'office' && prev !== 'office') addedDates.push(r.date);
-        else if (newSt === 'office' && prev === 'office') updatedDates.push(r.date);
-        else if (newSt !== 'office' && prev === 'office') removedDates.push(r.date);
-      }
-
-      const userName = req.user!.name;
-      const uid = userId.toString();
-      if (addedDates.length > 0) {
-        createFavoriteNotifications(uid, userName, addedDates, 'added')
-          .catch((e) => console.error('createFavoriteNotifications error:', e));
-      }
-      if (updatedDates.length > 0) {
-        createFavoriteNotifications(uid, userName, updatedDates, 'updated')
-          .catch((e) => console.error('createFavoriteNotifications error:', e));
-      }
-      if (removedDates.length > 0) {
-        createFavoriteNotifications(uid, userName, removedDates, 'removed')
-          .catch((e) => console.error('createFavoriteNotifications error:', e));
+      const successResults = results.filter((r) => r.success);
+      if (successResults.length > 0) {
+        const newStatusMap: Record<string, string> = {};
+        for (const r of successResults) newStatusMap[r.date] = r.newStatus ?? 'wfh';
+        dispatchBulkFavoriteNotifications(
+          userId.toString(), req.user!.name,
+          successResults.map((r) => r.date),
+          existingStatusMap, (d) => newStatusMap[d] ?? 'wfh',
+        );
       }
     }
 
